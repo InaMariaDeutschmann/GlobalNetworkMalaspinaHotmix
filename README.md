@@ -1,4 +1,4 @@
-# Data and code for: Disentangle marine microbial networks across space
+# Data and code for: Disentangling marine microbial networks across space
 
 Preprint available soon
 
