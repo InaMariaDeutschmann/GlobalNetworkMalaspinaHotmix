@@ -1,0 +1,274 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Network Similarity
+## Required Packages
+```{r, echo=FALSE}
+library(igraph)
+library(ggplot2)
+require(reshape2)
+library(ape)
+theme_set(theme_minimal())
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE)
+```
+5448 nodes and 29118 edges
+
+## Shared edges
+Repeatability score as average pairwise edge overlap between two networks (Jaccard similarity coefficient between two sets of network edges)
+We calculate a repeatability score as the size of the set of intersection of network edges divided by the size of the set of the union of the networks edges between two networks.
+
+# Average of all pairwise Jaccard indices
+Given 12 years, the average Jaccard index is the mean of all Jaccard indices of pairwise network comparisons
+```{r}
+N <- NW[,grep("m",colnames(NW))]
+N_Intersection <- as.matrix(t(N))%*%as.matrix(N)
+N_Union <- matrix(data = 0, nrow = dim(N_Intersection)[1], ncol = dim(N_Intersection)[2])
+for(i in 1:(dim(N)[2]-1))
+{
+  for(j in (i+1):dim(N)[2])
+  {
+    N_Union[i,j] <- length(which(N[,i]>0 | N[,j]>0))
+  }
+}
+N_RepeatabilityScore <- N_Intersection / N_Union
+RepeatabilityScores <- as.vector(N_RepeatabilityScore)
+RepeatabilityScores <- RepeatabilityScores[which(RepeatabilityScores<1)]
+average_RepeatabilityScore <- sum(RepeatabilityScores) / length(RepeatabilityScores)
+paste(sum(RepeatabilityScores), " / ", length(RepeatabilityScores), " = ", sum(RepeatabilityScores) / length(RepeatabilityScores), sep ="")
+```
+Average (mean): 4399.08760475968 / 78606 = 0.0559637636409393"
+
+Save
+```{r}
+v_temp <- data.frame(Source=NA, Target=NA, J=N_RepeatabilityScore[upper.tri(N_RepeatabilityScore)], stringsAsFactors = FALSE)
+c_temp <- 1
+for(i in c(2:dim(N_RepeatabilityScore)[1])){
+  for(j in c(1:(i-1))){
+    v_temp[c_temp, "Source"] <- colnames(N_RepeatabilityScore)[i]
+    v_temp[c_temp, "Target"] <- rownames(N_RepeatabilityScore)[j]
+    c_temp <- c_temp + 1
+  }
+}
+path <- paste(PATH,"07_NetworkSimilarity/SharedEdges/",sep="")
+filename <- "nw_comparison_EdgeSet_edgelist.tsv"
+write.table(v_temp, paste(path,filename,sep=""), row.names = FALSE, col.names = TRUE, quote = FALSE, dec = ".", sep = "\t")
+```
+
+Stats
+```{r}
+summary(v_temp$J)
+```
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+0.000000 0.002894 0.015107 0.055964 0.065418 0.766038 
+
+## Violin and Boxplot
+```{r}
+dodge <- position_dodge(width = 0.9)
+p_J_all <- ggplot(v_temp, aes(x="all", y=J)) + xlab("Jaccard index") + ylab("") +
+                      geom_violin(position = dodge) + #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+                      geom_boxplot(width=0.05,position=dodge, alpha = 0.8, color = "grey") +
+                      theme(text = element_text(size=20))
+p_J_all
+```
+
+# 2_Graphlet
+https://www.nature.com/articles/srep04547
+http://www0.cs.ucl.ac.uk/staff/natasa/GCD/index.html
+1. Transform networks into Leda (.gw) format (here in R)
+2. Compute the graphlet degree vector signatures of each network using the provided script: "python count.py my_network.gw"
+3. Compute GCD-11, (all networks and their signature files must be in the same folder):  "python network_folder gcd11 n", where n=#threads
+
+## 1. Save each subnetwork in Leda format
+```{r}
+N <- NW[,c(1,2,grep("m",colnames(NW)))]
+path <- paste(PATH,"07_NetworkSimilarity/Graphlet/Subnetworks/",sep="")
+for(i in colnames(N)[-c(1,2)])
+{
+  G <- graph_from_edgelist(as.matrix(N[which(N[,i]>0),c("Source","Target")]))
+
+  filename <- paste(path,i,".gw",sep="")
+  write_graph(G, filename, format = c("leda"))
+}
+```
+
+## 2. Compute graphlet degree vector signatures
+- change path if needed!
+```{bash}
+cd GlobalNetworkMalaspinaHotmix/07_NetworkSimilarity/Graphlet/Subnetworks
+echo "# Compute graphlet degree vector signatures\n" > Log.txt
+for f in *.gw;
+do
+  echo "# Processing $f" >> Log.txt
+  python ../count/count.py $f >> Log.txt
+done
+cd ..
+```
+
+## 3. Compute GCD-11, (all networks and their signature files must be in the same folder):  "python network_folder gcd11 n", where n=#threads
+- I used adjusted the program from: http://www0.cs.ucl.ac.uk/staff/natasa/GCD/index.html
+          Supplementary Information for: "Revealing the Hidden Language of Complex Networks"
+          O. N. Yaveroglu, N. Malod-Dognin, D. Davis, Z. Levnajic, V. Janjic, R. Karapandza, A. Stojmirovic, and N. Przulj
+- see: "Adjustments_to_original_code.txt" in the folder "Graphlet"    
+- change path if needed!
+```{bash}
+# All -> too big, doesn't work on Laptop (at least not in reasonable time)
+cd GlobalNetworkMalaspinaHotmix/07_NetworkSimilarity/Graphlet
+echo "# Compute GCD-11\n" > Log_all.txt
+mkdir temp
+
+echo "# all\n"  >> Log_all.txt
+cp Subnetworks/* temp/
+python networkComparison.py temp/ gcd11 1 >> Log_all.txt
+cp temp/gcd11.txt ./gcd11_all.txt
+rm temp/gcd11.txt
+rm -r temp
+
+# Partially
+cd GlobalNetworkMalaspinaHotmix/07_NetworkSimilarity/Graphlet
+echo "# Compute GCD-11\n" > Log_partial.txt
+mkdir tempP
+
+echo "# Hotmix\n"  >> Log_partial.txt
+cp Subnetworks/Hotmix* tempP/
+python networkComparison.py tempP/ gcd11 1 >> Log_partial.txt
+cp tempP/gcd11.txt ./gcd11_Hotmix.txt
+rm tempP/gcd11.txt
+
+echo "# Hotmix and MalaSurf\n"  >> Log_partial.txt
+cp Subnetworks/MalaSurf* tempP/
+python networkComparison.py tempP/ gcd11 1 >> Log_partial.txt
+cp tempP/gcd11.txt ./gcd11_Hotmix_MalaSurf.txt
+rm tempP/gcd11.txt
+rm tempP/MalaSurf*
+
+echo "# Hotmix, MalaDeep, and MalaVP\n"  >> Log_partial.txt
+cp Subnetworks/MalaDeep* tempP/
+cp Subnetworks/MalaVP* tempP/
+python networkComparison.py tempP/ gcd11 1 >> Log_partial.txt
+cp tempP/gcd11.txt ./gcd11_Hotmix_MalaDeep_MalaVP.txt
+rm tempP/Hotmix*
+
+echo "# MalaSurf, MalaDeep, and MalaVP\n"  >> Log_partial.txt
+cp Subnetworks/MalaSurf* tempP/
+python networkComparison.py tempP/ gcd11 1 >> Log_partial.txt
+cp tempP/gcd11.txt ./gcd11_MalaSurf_MalaDeep_MalaVP.txt
+rm -r tempP
+```
+
+## 4. Upload matrix
+Combine
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE)
+stationIDs <- colnames(NW)[grep("_",colnames(NW))]
+nw_comp_graphlet <- matrix(nrow=length(stationIDs), ncol=length(stationIDs))
+colnames(nw_comp_graphlet) <- stationIDs
+rownames(nw_comp_graphlet) <- stationIDs
+
+# Hotmix
+path <- paste(PATH,"07_NetworkSimilarity/Graphlet/",sep="")
+filename <- "gcd11_Hotmix.txt"
+dt_temp <- read.table(paste(path,filename,sep=""), header = TRUE)
+colnames(dt_temp) <- gsub("tempP.", "", colnames(dt_temp))
+rownames(dt_temp) <- gsub("tempP/", "", rownames(dt_temp))
+
+dt_temp <- as.matrix(dt_temp)
+nw_comp_graphlet[rownames(dt_temp),colnames(dt_temp)] <- dt_temp
+
+# Hotmix and MalaSurf
+filename <- "gcd11_Hotmix_MalaSurf.txt"
+dt_temp <- read.table(paste(path,filename,sep=""), header = TRUE)
+colnames(dt_temp) <- gsub("tempP.", "", colnames(dt_temp))
+rownames(dt_temp) <- gsub("tempP/", "", rownames(dt_temp))
+
+dt_temp <- as.matrix(dt_temp)
+nw_comp_graphlet[rownames(dt_temp),colnames(dt_temp)] <- dt_temp
+
+# Hotmix, MalaDeep, and MalaVP
+filename <- "gcd11_Hotmix_MalaDeep_MalaVP.txt"
+dt_temp <- read.table(paste(path,filename,sep=""), header = TRUE)
+colnames(dt_temp) <- gsub("tempP.", "", colnames(dt_temp))
+rownames(dt_temp) <- gsub("tempP/", "", rownames(dt_temp))
+
+dt_temp <- as.matrix(dt_temp)
+nw_comp_graphlet[rownames(dt_temp),colnames(dt_temp)] <- dt_temp
+
+# MalaSurf, MalaDeep, and MalaVP
+filename <- "gcd11_MalaSurf_MalaDeep_MalaVP.txt"
+dt_temp <- read.table(paste(path,filename,sep=""), header = TRUE)
+colnames(dt_temp) <- gsub("tempP.", "", colnames(dt_temp))
+rownames(dt_temp) <- gsub("tempP/", "", rownames(dt_temp))
+
+dt_temp <- as.matrix(dt_temp)
+nw_comp_graphlet[rownames(dt_temp),colnames(dt_temp)] <- dt_temp
+
+# NAs?
+which(is.na(nw_comp_graphlet))
+
+# Save
+filename <- "nw_comparison_graphlet_matrix.txt"
+write.table(nw_comp_graphlet, paste(path,filename,sep=""), row.names = TRUE, col.names = TRUE, quote = FALSE, dec = ".", sep = "\t")
+```
+
+```{r}
+isSymmetric(nw_comp_graphlet) # TRUE
+nw_comp_graphlet[lower.tri(nw_comp_graphlet)] <- NA
+diag(nw_comp_graphlet) <- NA
+E <- melt(nw_comp_graphlet)
+E <- E[which(!is.na(E$value)),]
+colnames(E) <- c("Source","Target","gdc_11")
+
+## Save
+filename <- "nw_comparison_graphlet_edgelist.tsv"
+write.table(E, paste(path,filename,sep=""), row.names = FALSE, col.names = TRUE, quote = FALSE, dec = ".", sep = "\t")
+```
+
+## Visualization of graphlet
+Boxplot all
+```{r}
+dodge <- position_dodge(width = 0.9)
+p_g_all <- ggplot(E, aes(x="all", y=gdc_11)) + xlab("gdc_11") + ylab("") + ylim(c(0,1.8)) +
+                      geom_violin(position = dodge) + #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+                      geom_boxplot(width=0.1,position=dodge, alpha = 0.8, color = "grey") +
+                      theme(text = element_text(size=20))
+p_g_all
+```
+
+# Minimal Spanning Tree
+```{r}
+# Determine MST
+path <-  paste(PATH,"07_NetworkSimilarity/Graphlet/",sep="")
+filename <- "nw_comparison_graphlet_matrix.txt"
+nwsim <- read.table(paste(path,filename,sep=""),header=TRUE)
+myMST <- mst(as.dist(nwsim))
+dim(myMST)
+rownames(myMST)==colnames(myMST)
+isSymmetric.matrix(as.matrix(myMST))
+
+# Convert adjacency matrix to edgelist
+G <- graph.adjacency(as.matrix(myMST), mode = "undirected")
+Edgelist <- as.data.frame(get.edgelist(G))
+colnames(Edgelist) <- c("Source","Target")
+head(Edgelist)
+
+# Save
+path <-  paste(PATH,"07_NetworkSimilarity/MST/",sep="")
+filename <- "MST.tsv"
+write.table(Edgelist, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
