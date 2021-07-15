@@ -1,6 +1,6 @@
 # Data and code for: Disentangling marine microbial networks across space
 
-Preprint available soon
+Preprint: https://doi.org/10.1101/2021.07.12.451729
 
 This repository contains the data needed to redo the analysis:
 - (The microbial sequence abundances (ASV tables), taxonomic classifications, and environmental data including nutrients)
@@ -11,6 +11,9 @@ This repository contains the data needed to redo the analysis:
 
 Note on data availability: The microbial sequence abundances (ASV tables), taxonomic classifications, environmental data including nutrients will be publicly available after acceptance. The data are of course available to editors and reviewers upon request.
 
+
+## Citation
+Disentangling marine microbial networks across space; Ina Maria Deutschmann, Erwan Delage, Caterina R. Giner, Marta Sebastián, Julie Poulain, Javier Arístegui, Carlos M. Duarte, Silvia G. Acinas, Ramon Massana, Josep M. Gasol, Damien Eveillard, Samuel Chaffron, Ramiro Logares; bioRxiv 2021.07.12.451729; doi: https://doi.org/10.1101/2021.07.12.451729
 
 ## CONTACT
 <div itemscope itemtype="https://schema.org/Person"><a itemprop="sameAs" content="https://orcid.org/0000-0002-3512-261X" href="https://orcid.org/0000-0002-3512-261X" target="orcid.widget" rel="noopener noreferrer" style="vertical-align:top;"><img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" style="width:1em;margin-right:.5em;" alt="ORCID iD icon">Ina Maria Deutschmann</a></div>
