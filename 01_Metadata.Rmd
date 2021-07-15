@@ -1,0 +1,110 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Distribution of Samples
+## Required Packages
+```{r}
+library(igraph)
+library(ggplot2)
+library(ggridges)
+library(reshape)
+library(RColorBrewer)
+library(circlize)
+library(tidyr)
+theme_set(theme_minimal())
+```
+
+## Parameter
+```{r}
+PATH <- "/GlobalNetworkMalaspinaHotmix/"
+PATH <- "/Users/ina/Dropbox/DATA/Project_GlobalOcean_2021_March/GitHub/"
+```
+
+## Read in file
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+samples <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(samples) <- samples$Sample
+```
+
+## Number of samples in regions and depth layers
+```{r}
+for(id in c("SRF", "EPI", "DCM", "MES", "BAT"))
+{
+  print(paste(id,length(which(samples$layer==id))))
+}
+table(samples$OceanRegion)
+table(samples[,c("layer","OceanRegion")])
+```
+[1] "SRF 157"
+[1] "EPI 22"
+[1] "DCM 38"
+[1] "MES 91"
+[1] "BAT 89"
+
+ IO  MS NAO NPO SAO SPO 
+ 53 145  78  53  47  21 
+     OceanRegion
+layer IO MS NAO NPO SAO SPO
+  BAT  8 35  20  12  11   3
+  DCM  3 21   6   3   4   1
+  EPI  0 18   4   0   0   0
+  MES  7 52  14   9   6   3
+  SRF 35 19  34  29  26  14
+
+## Latitude and Longitude
+```{r}
+summary(samples$Latitude)
+summary(samples$Longitude)
+```
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ -40.55  -13.53   21.89   12.59   35.95   41.49 
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+-179.524  -32.837    0.968  -14.154   21.372  179.141 
+
+## Depth range per layer
+```{r}
+summary(samples$depth[samples$layer=="SRF"])
+summary(samples$depth[samples$layer=="EPI"])
+summary(samples$depth[samples$layer=="DCM"])
+summary(samples$depth[samples$layer=="MES"])
+summary(samples$depth[samples$layer=="BAT"])
+```
+Surface
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  3.000   3.000   3.000   3.025   3.000   5.000 
+  
+Epipelagic (neither surface nor DCM)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  12.00   50.00   50.00   46.45   50.00   50.00 
+
+DCM
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  37.00   75.00   86.00   89.16  110.00  130.00 
+
+Mesopelagic
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  200.0   400.0   550.0   558.5   765.0  1000.0 
+  
+Bathypelagic
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   1065    2000    2421    2600    3518    4539 
+   
+## Map
+Showing stations on the map
+```{r}
+world_map <- map_data("world")
+p <- ggplot(world_map, aes(x = long, y = lat, group = group)) +
+       geom_polygon(fill="lightgray", colour = "white") +
+       theme_classic() +
+       theme(text = element_text(size = 12)) +
+       geom_point(data = samples, aes(x = Longitude, y = Latitude, group="cluster"), shape=15, color = "black", alpha = 0.6, size = 1) +
+       facet_grid(factor(layer,levels=c("SRF","EPI","DCM","MES","BAT"))~.)
+path <- paste(PATH,"01_Metadata/",sep="")
+filaname <- "Map.png"
+ggsave(paste(path,filename,sep=""), width = 3.5, height = 7, units = "in", plot = p)
+```

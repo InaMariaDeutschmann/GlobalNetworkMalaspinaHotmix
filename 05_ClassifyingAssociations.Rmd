@@ -1,0 +1,1145 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Classifying associations
+## Required Packages
+```{r, echo=FALSE}
+library(igraph)
+library(ggplot2)
+theme_set(theme_minimal())
+library(reshape)
+library(dplyr)
+library(RColorBrewer)
+library(circlize)
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "EdgePrevalence.tsv"
+PREV <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+G <- graph_from_edgelist(as.matrix(PREV[,c("Source","Target")]))
+vcount(G)
+ecount(G)
+```
+5448 nodes and 29118 edges
+
+## Classifying associations
+```{r}
+AssCla <- PREV[,c("Source","Target")]
+REGION_IDs <- c("MS","NAO","SAO","SPO","NPO","IO")
+DEPTH_IDs <- c("SRF","DCM","MES","BAT")
+for(i in DEPTH_IDs)
+{
+  # Location-specific
+  for(REGION in REGION_IDs)
+  {
+    ID <- paste("LocationSpecific",REGION,i,sep="_")
+    col <- paste("Prevalence",REGION,i,sep="_")
+    cols <- paste("Prevalence",REGION_IDs[which(REGION_IDs!=REGION)],i,sep="_")
+    AssCla[,ID] <- 1*((PREV[,col] > 0.7) & (rowSums(1*(PREV[,cols] < 0.2))==length(cols)))
+    AssCla[,paste(ID,"present_absent",sep="_")] <- 1*((PREV[,col] > 0) & (rowSums(1*(PREV[,cols] == 0))==length(cols)))   
+  }
+  
+  # Global
+  ID <- paste("Global",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.7))==length(cols))
+  
+  # Prevalent
+  ID <- paste("Prevalent",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.5))==length(cols))
+
+  # LowFrequency
+  ID <- paste("LowFrequency",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.2))==length(cols))
+  
+  # Rare
+  #ID <- paste("Rare",i,sep="_")
+  #cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  #AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] < 0.2))==length(cols))
+  
+  # Absent
+  ID <- paste("Absent",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols]==0))==length(cols))
+}
+colnames(AssCla)
+
+for(i in DEPTH_IDs)
+{
+  # Location-specific
+  for(REGION in REGION_IDs)
+  {
+    v <- table(AssCla[,paste("LocationSpecific",REGION,i,"present_absent",sep="_")])
+    print(paste(i," ",REGION,": 0=", v[1], ", 1=", v[2], sep=""))
+  }
+}
+```
+[1] "SRF MS: 0=28522, 1=596"
+[1] "SRF NAO: 0=28541, 1=577"
+[1] "SRF SAO: 0=28956, 1=162"
+[1] "SRF SPO: 0=28966, 1=152"
+[1] "SRF NPO: 0=28820, 1=298"
+[1] "SRF IO: 0=28889, 1=229"
+
+[1] "DCM MS: 0=27823, 1=1295"
+[1] "DCM NAO: 0=28812, 1=306"
+[1] "DCM SAO: 0=28814, 1=304"
+[1] "DCM SPO: 0=29013, 1=105"
+[1] "DCM NPO: 0=28985, 1=133"
+[1] "DCM IO: 0=28971, 1=147"
+
+[1] "MES MS: 0=26864, 1=2254"
+[1] "MES NAO: 0=28696, 1=422"
+[1] "MES SAO: 0=28817, 1=301"
+[1] "MES SPO: 0=29078, 1=40"
+[1] "MES NPO: 0=28914, 1=204"
+[1] "MES IO: 0=28919, 1=199"
+
+[1] "BAT MS: 0=27901, 1=1217"
+[1] "BAT NAO: 0=27596, 1=1522"
+[1] "BAT SAO: 0=28975, 1=143"
+[1] "BAT SPO: 0=29009, 1=109"
+[1] "BAT NPO: 0=28602, 1=516"
+[1] "BAT IO: 0=28956, 1=162"
+
+```{r}
+for(i in DEPTH_IDs)
+{
+  AssCla[,i] <- "Other"
+  AssCla[which(AssCla[,paste("Absent",i,sep="_")]==1),i] <- "Absent"
+  AssCla[which(AssCla[,paste("LowFrequency",i,sep="_")]==1),i] <- "LowFrequency"
+  AssCla[which(AssCla[,paste("Prevalent",i,sep="_")]==1),i] <- "Prevalent"
+  AssCla[which(AssCla[,paste("Global",i,sep="_")]==1),i] <- "Global"
+  # Location-specific
+  for(REGION in REGION_IDs)
+  {
+    AssCla[which(AssCla[,paste("LocationSpecific",REGION,i,"present_absent",sep="_")]==1),i] <- REGION
+  }
+}
+colnames(AssCla)
+table(AssCla[,"SRF"])
+table(AssCla[,"DCM"])
+table(AssCla[,"MES"])
+table(AssCla[,"BAT"])
+
+length(which(AssCla$SRF!="Absent"))
+length(which(AssCla$DCM!="Absent"))
+length(which(AssCla$MES!="Absent"))
+length(which(AssCla$BAT!="Absent"))
+
+table(AssCla[,"SRF"])/length(which(AssCla$SRF!="Absent"))*100
+table(AssCla[,"DCM"])/length(which(AssCla$DCM!="Absent"))*100
+table(AssCla[,"MES"])/length(which(AssCla$MES!="Absent"))*100
+table(AssCla[,"BAT"])/length(which(AssCla$BAT!="Absent"))*100
+
+
+length(which(AssCla$SRF!="Absent" & AssCla$SRF!="LowFrequency" & AssCla$SRF!="Other" & AssCla$SRF!="Prevalent" & AssCla$SRF!="Global"))
+length(which(AssCla$DCM!="Absent" & AssCla$DCM!="LowFrequency" & AssCla$DCM!="Other" & AssCla$DCM!="Prevalent" & AssCla$DCM!="Global"))
+length(which(AssCla$MES!="Absent" & AssCla$MES!="LowFrequency" & AssCla$MES!="Other" & AssCla$MES!="Prevalent" & AssCla$MES!="Global"))
+length(which(AssCla$BAT!="Absent" & AssCla$BAT!="LowFrequency" & AssCla$BAT!="Other" & AssCla$BAT!="Prevalent" & AssCla$BAT!="Global"))
+
+length(which(AssCla$SRF!="Absent" & AssCla$SRF!="LowFrequency" & AssCla$SRF!="Other" & AssCla$SRF!="Prevalent" & AssCla$SRF!="Global"))/length(which(AssCla$SRF!="Absent"))*100
+length(which(AssCla$DCM!="Absent" & AssCla$DCM!="LowFrequency" & AssCla$DCM!="Other" & AssCla$DCM!="Prevalent" & AssCla$DCM!="Global"))/length(which(AssCla$DCM!="Absent"))*100
+length(which(AssCla$MES!="Absent" & AssCla$MES!="LowFrequency" & AssCla$MES!="Other" & AssCla$MES!="Prevalent" & AssCla$MES!="Global"))/length(which(AssCla$MES!="Absent"))*100
+length(which(AssCla$BAT!="Absent" & AssCla$BAT!="LowFrequency" & AssCla$BAT!="Other" & AssCla$BAT!="Prevalent" & AssCla$BAT!="Global"))/length(which(AssCla$BAT!="Absent"))*100
+```
+SRF
+    Absent         IO         MS        NAO        NPO LowFrequency      Other  Prevalent        SAO        SPO  Global 
+     10884        229        596        577        298        105      16067         22        162        152         26 
+
+DCM
+    Absent         IO         MS        NAO        NPO LowFrequency      Other  Prevalent        SAO        SPO  Global 
+     21738        147       1295        306        133        160       4860         47        304        105         23 
+
+MES
+    Absent         IO         MS        NAO        NPO LowFrequency      Other  Prevalent        SAO        SPO  Global 
+     18754        199       2254        422        204        212       6701         10        301         40         21 
+
+BAT
+    Absent         IO         MS        NAO        NPO LowFrequency      Other  Prevalent        SAO        SPO 
+     19019        162       1217       1522        516         51       6372          7        143        109 
+
+Present:
+SRF 18234
+DCM 7380
+MES 10364
+BAT 10099
+
+    Absent         IO         MS        NAO        NPO LowFrequency      Other  Prevalent        SAO        SPO  Global 
+59.6906877  1.2558956  3.2686191  3.1644181  1.6343095  0.5758473 88.1156082  0.1206537  0.8884501  0.8336075  0.1425908 
+
+     Absent          IO          MS         NAO         NPO  LowFrequency       Other   Prevalent         SAO         SPO   Global 
+294.5528455   1.9918699  17.5474255   4.1463415   1.8021680   2.1680217  65.8536585   0.6368564   4.1192412   1.4227642   0.3116531 
+
+      Absent           IO           MS          NAO          NPO   LowFrequency        Other    Prevalent          SAO          SPO    Global 
+180.95329988   1.92010807  21.74835971   4.07178695   1.96835199   2.04554226  64.65650328   0.09648784   2.90428406   0.38595137   0.20262447 
+
+      Absent           IO           MS          NAO          NPO   LowFrequency        Other    Prevalent          SAO          SPO 
+188.32557679   1.60411922  12.05069809  15.07079909   5.10941677   0.50500050  63.09535598   0.06931379   1.41598178   1.07931478  
+
+Location-specific
+SRF: 2014
+DCM: 2290
+MES: 3420
+BAT: 3669
+
+SRF: 11.0453
+DCM: 31.02981
+MES: 32.99884
+BAT: 36.33033
+
+## Save table
+```{r}
+path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+filename <- "AssociationClassification_AbsentPresent.tsv"
+write.table(AssCla, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+```
+
+## Number and fraction of classified associations
+```{r}
+v <- c(brewer.pal(8, "Dark2"),"black", "light grey")
+mycol <- c(MS=v[8],
+           NAO=v[7],
+           SAO=v[6],
+           SPO=v[5],
+           NPO=v[4],
+           IO=v[3],
+           LowFrequency=v[2],
+           Prevalent=v[1],
+           Global=v[9],
+           Other=v[10])
+
+dt_temp <- data.frame(Depth=rep(DEPTH_IDs, each = dim(AssCla)[1]),
+                      Type=c(AssCla[,"SRF"], AssCla[,"DCM"], AssCla[,"MES"], AssCla[,"BAT"]))
+dt_temp <- dt_temp[which(dt_temp$Type!="Absent"),]
+head(dt_temp)
+
+# Number
+  p <- ggplot(dt_temp, aes(x=factor(Depth, levels=rev(DEPTH_IDs)), fill=factor(Type, levels=rev(c("MS","NAO","SAO","SPO","NPO","IO","LowFrequency","Prevalent","Global","Other"))))) +
+            geom_bar(stat = "count") +
+            scale_fill_manual(values = mycol) +
+            xlab("Depth layer") + ylab("Number of associations") +
+            theme_classic() + theme(text = element_text(size=10), legend.position = "none", legend.title = element_blank(),
+                          axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                          axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            coord_flip()
+  path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+  filename <- paste(path,"Barplot_NumberAssociations.pdf",sep="")
+  ggsave(filename, plot = p, height = 3, width = 4)
+
+# Fraction  
+  p <- ggplot(dt_temp, aes(x=factor(Depth, levels=rev(DEPTH_IDs)), fill=factor(Type, levels=rev(c("MS","NAO","SAO","SPO","NPO","IO","LowFrequency","Prevalent","Global","Other"))))) +
+            geom_bar(position = "fill") +
+            scale_fill_manual(values = mycol) +
+            xlab("Depth layer") + ylab("Fraction of associations") +
+            theme_classic() + theme(text = element_text(size=10), legend.position = "right", legend.title = element_blank(),
+                          axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                          axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            coord_flip()
+  path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+  filename <- paste(path,"/Barplot_FractionAssociations.pdf",sep="")
+  ggsave(filename, plot = p, height = 3, width = 4)
+```
+
+## Characterization: Prevalence
+```{r}
+dt_temp <- AssCla[,c("Source","Target","SRF","DCM","MES","BAT")]
+dt_Vis <- data.frame(Source=character(),
+                     Target=character(),
+                     Type=character(),
+                     Prevalence=double(),
+                     Region=character(),
+                     Depth=character(),
+                     stringsAsFactors = FALSE)
+for(i in DEPTH_IDs)
+{
+  for(REGION in REGION_IDs)
+  {
+     prev <- paste("Prevalence",REGION,i,sep="_")
+     dt_temp <- cbind(merge(AssCla[,c("Source","Target",i)], PREV[,c("Source","Target",prev)], by=c("Source","Target"), all=TRUE),
+                      Region = REGION,
+                      Depth = i)
+     colnames(dt_temp)[which(colnames(dt_temp)==prev)] <- "Prevalence"
+     colnames(dt_temp)[which(colnames(dt_temp)==i)] <- "Type"
+     dt_Vis <- rbind(dt_Vis, dt_temp)
+  }
+}
+dt_Vis <- dt_Vis[which(dt_Vis$Type!="Absent" & dt_Vis$Type!="Other" & dt_Vis$Prevalence>0),]
+dt_Vis$Type[which(dt_Vis$Type=="MS")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="NAO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="SAO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="SPO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="NPO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="IO")] <- "LocationSpecific"
+mycol <- c(mycol, LocationSpecific="#E6AB02")
+p <- ggplot(dt_Vis, aes(x=Prevalence,
+                        group = Type,
+                        fill=Type)) + 
+            geom_histogram(alpha=0.6, position="identity") +
+            #geom_density(alpha=0.2) +
+            xlab("Region and depth specific prevalence") + ylab("Frequency") +
+            scale_fill_manual(values = mycol) +
+            theme_classic() +
+            theme(text = element_text(size = 10, color = "black"), legend.position = "bottom", legend.title = element_blank(),
+                  axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                  axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            facet_grid(Depth~Region, scales = "free")
+path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+filename <- paste(path,"/Characterization_Prevalence.pdf",sep="")
+ggsave(filename, plot = p, height = 5, width = 8)
+```
+
+## Characterization: Taxonomy
+```{r}
+myorderSections <- PhylumDivision_IDs
+mygridcolIDs <- PhylumDivision_IDs
+
+dt_Vis <- merge(NW,AssCla, by=c("Source","Target"), all=TRUE)
+dt_Vis <- merge(dt_Vis,PREV, by=c("Source","Target"), all=TRUE)
+colnames(dt_Vis)
+
+path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+
+# Location-Specific
+for(i in DEPTH_IDs)
+{
+  for(REGION in REGION_IDs)
+  {
+    # Circular Plot
+    ## Initialize the layout
+    #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+    myE <- dt_Vis[which(dt_Vis[,i]==REGION),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",REGION,i,sep="_"))]
+    print(paste(i,REGION,dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"CharacterizationTaxonomy_",i,"_",REGION,".pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+  }
+}
+
+# Global, Prevalent, and LowFrequency
+colnames(dt_Vis)
+for(i in DEPTH_IDs)
+{
+    # Circular Plot
+    ## Initialize the layout
+    #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+    # Global
+    myE <- dt_Vis[which(dt_Vis[,i]=="Global"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"Global",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"CharacterizationTaxonomy_",i,"_Global.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+    
+    # Prevalent
+    myE <- dt_Vis[which(dt_Vis[,i]=="Prevalent"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"Prevalent",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"CharacterizationTaxonomy_",i,"_Prevalent.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+    
+    # LowFrequency
+    myE <- dt_Vis[which(dt_Vis[,i]=="LowFrequency"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"LowFrequency",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"CharacterizationTaxonomy_",i,"_LowFrequency.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+}
+```
+
+Location-Specific
+[1] "SRF MS 596"
+[1] "SRF NAO 577"
+[1] "SRF SAO 162"
+[1] "SRF SPO 152"
+[1] "SRF NPO 298"
+[1] "SRF IO 229"
+[1] "DCM MS 1295"
+[1] "DCM NAO 306"
+[1] "DCM SAO 304"
+[1] "DCM SPO 105"
+[1] "DCM NPO 133"
+[1] "DCM IO 147"
+[1] "MES MS 2254"
+[1] "MES NAO 422"
+[1] "MES SAO 301"
+[1] "MES SPO 40"
+[1] "MES NPO 204"
+[1] "MES IO 199"
+[1] "BAT MS 1217"
+[1] "BAT NAO 1522"
+[1] "BAT SAO 143"
+[1] "BAT SPO 109"
+[1] "BAT NPO 516"
+[1] "BAT IO 162"
+
+Global, Prevalent, and LowFrequency
+[1] "SRF Global 26"
+[1] "SRF Prevalent 22"
+[1] "SRF LowFrequency 105"
+[1] "DCM Global 23"
+[1] "DCM Prevalent 47"
+[1] "DCM LowFrequency 160"
+[1] "MES Global 21"
+[1] "MES Prevalent 10"
+[1] "MES LowFrequency 212"
+[1] "BAT Global 0"
+[1] "BAT Prevalent 7"
+[1] "BAT LowFrequency 51"
+
+# Classifying associations (not considering MS when determining global associations)
+-> Bathypelagic of MS is warmer than bathypelagic in ocean, which may have biased the analysis
+-> thus, we are recomputing global, prevalent, and low-frequency associations not considering the MS
+-> first, checking median temperature
+
+## median temperature within each region and depth layer
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ENV.txt"
+ENV <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(ENV) <- ENV$ID
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+for(i in REGION_IDs)
+{
+  for(j in c("SRF","DCM","MES","BAT"))
+  {
+      print(paste(i, j, sep = "_"))
+      print(summary(t(ENV["ENV_Temperature",as.character(SAM$Sample[which(SAM$OceanRegion==i & SAM$layer==j)])])))
+  }
+}
+```
+
+[1] "MS_SRF"
+ ENV_Temperature
+ Min.   :16.27  
+ 1st Qu.:17.73  
+ Median :18.34  
+ Mean   :18.13  
+ 3rd Qu.:18.69  
+ Max.   :19.83  
+[1] "MS_DCM"
+ ENV_Temperature
+ Min.   :13.59  
+ 1st Qu.:14.34  
+ Median :15.10  
+ Mean   :15.43  
+ 3rd Qu.:16.53  
+ Max.   :17.80  
+[1] "MS_MES"
+ ENV_Temperature
+ Min.   :13.07  
+ 1st Qu.:13.30  
+ Median :13.82  
+ Mean   :14.03  
+ 3rd Qu.:14.17  
+ Max.   :17.14  
+ NA's   :1      
+[1] "MS_BAT"
+ ENV_Temperature
+ Min.   :13.10  
+ 1st Qu.:13.36  
+ Median :13.78  
+ Mean   :13.62  
+ 3rd Qu.:13.86  
+ Max.   :14.01  
+[1] "NAO_SRF"
+ ENV_Temperature
+ Min.   :18.45  
+ 1st Qu.:21.26  
+ Median :25.87  
+ Mean   :24.69  
+ 3rd Qu.:27.94  
+ Max.   :29.09  
+ NA's   :1      
+[1] "NAO_DCM"
+ ENV_Temperature
+ Min.   :16.52  
+ 1st Qu.:17.09  
+ Median :17.46  
+ Mean   :19.22  
+ 3rd Qu.:20.57  
+ Max.   :25.34  
+[1] "NAO_MES"
+ ENV_Temperature
+ Min.   : 6.43  
+ 1st Qu.:10.79  
+ Median :11.90  
+ Mean   :12.54  
+ 3rd Qu.:14.69  
+ Max.   :16.88  
+[1] "NAO_BAT"
+ ENV_Temperature 
+ Min.   : 2.260  
+ 1st Qu.: 2.501  
+ Median : 4.140  
+ Mean   : 4.874  
+ 3rd Qu.: 5.722  
+ Max.   :10.146  
+[1] "SAO_SRF"
+ ENV_Temperature
+ Min.   :20.44  
+ 1st Qu.:22.34  
+ Median :25.19  
+ Mean   :24.58  
+ 3rd Qu.:26.94  
+ Max.   :27.49  
+[1] "SAO_DCM"
+ ENV_Temperature
+ Min.   :16.46  
+ 1st Qu.:18.57  
+ Median :20.25  
+ Mean   :20.82  
+ 3rd Qu.:22.49  
+ Max.   :26.32  
+[1] "SAO_MES"
+ ENV_Temperature
+ Min.   :4.530  
+ 1st Qu.:4.723  
+ Median :6.335  
+ Mean   :6.612  
+ 3rd Qu.:8.307  
+ Max.   :9.320  
+[1] "SAO_BAT"
+ ENV_Temperature
+ Min.   :0.830  
+ 1st Qu.:1.740  
+ Median :2.010  
+ Mean   :2.247  
+ 3rd Qu.:2.755  
+ Max.   :4.020  
+[1] "SPO_SRF"
+ ENV_Temperature
+ Min.   :21.04  
+ 1st Qu.:24.05  
+ Median :27.81  
+ Mean   :26.27  
+ 3rd Qu.:28.98  
+ Max.   :29.31  
+[1] "SPO_DCM"
+       V1       
+ Min.   :28.03  
+ 1st Qu.:28.03  
+ Median :28.03  
+ Mean   :28.03  
+ 3rd Qu.:28.03  
+ Max.   :28.03  
+[1] "SPO_MES"
+ ENV_Temperature
+ Min.   :6.710  
+ 1st Qu.:7.065  
+ Median :7.420  
+ Mean   :7.533  
+ 3rd Qu.:7.945  
+ Max.   :8.470  
+[1] "SPO_BAT"
+ ENV_Temperature
+ Min.   :1.150  
+ 1st Qu.:1.275  
+ Median :1.400  
+ Mean   :1.850  
+ 3rd Qu.:2.200  
+ Max.   :3.000  
+[1] "NPO_SRF"
+ ENV_Temperature
+ Min.   :21.65  
+ 1st Qu.:23.86  
+ Median :26.89  
+ Mean   :25.95  
+ 3rd Qu.:28.09  
+ Max.   :29.28  
+[1] "NPO_DCM"
+ ENV_Temperature
+ Min.   :20.09  
+ 1st Qu.:23.11  
+ Median :26.14  
+ Mean   :24.20  
+ 3rd Qu.:26.25  
+ Max.   :26.37  
+[1] "NPO_MES"
+ ENV_Temperature 
+ Min.   : 5.740  
+ 1st Qu.: 6.990  
+ Median : 7.250  
+ Mean   : 8.078  
+ 3rd Qu.: 8.870  
+ Max.   :11.460  
+[1] "NPO_BAT"
+ ENV_Temperature
+ Min.   :1.410  
+ 1st Qu.:1.475  
+ Median :1.590  
+ Mean   :1.769  
+ 3rd Qu.:2.135  
+ Max.   :2.390  
+[1] "IO_SRF"
+ ENV_Temperature
+ Min.   :15.75  
+ 1st Qu.:21.55  
+ Median :23.05  
+ Mean   :22.18  
+ 3rd Qu.:24.52  
+ Max.   :26.00  
+[1] "IO_DCM"
+ ENV_Temperature
+ Min.   :16.00  
+ 1st Qu.:16.67  
+ Median :17.34  
+ Mean   :17.52  
+ 3rd Qu.:18.29  
+ Max.   :19.23  
+[1] "IO_MES"
+ ENV_Temperature 
+ Min.   : 4.990  
+ 1st Qu.: 9.475  
+ Median :10.080  
+ Mean   :10.111  
+ 3rd Qu.:11.610  
+ Max.   :13.540  
+[1] "IO_BAT"
+ ENV_Temperature
+ Min.   :1.110  
+ 1st Qu.:1.625  
+ Median :2.105  
+ Mean   :2.646  
+ 3rd Qu.:3.250  
+ Max.   :5.310  
+ 
+## Classifying associations
+```{r}
+AssCla <- PREV[,c("Source","Target")]
+REGION_IDs <- c("MS","NAO","SAO","SPO","NPO","IO")
+REGION_IDs_noMS <- c("NAO","SAO","SPO","NPO","IO")
+DEPTH_IDs <- c("SRF","DCM","MES","BAT")
+for(i in DEPTH_IDs)
+{
+  # Location-specific
+  for(REGION in REGION_IDs)
+  {
+    ID <- paste("LocationSpecific",REGION,i,sep="_")
+    col <- paste("Prevalence",REGION,i,sep="_")
+    cols <- paste("Prevalence",REGION_IDs[which(REGION_IDs!=REGION)],i,sep="_")
+    AssCla[,ID] <- 1*((PREV[,col] > 0.7) & (rowSums(1*(PREV[,cols] < 0.2))==length(cols)))
+    AssCla[,paste(ID,"present_absent",sep="_")] <- 1*((PREV[,col] > 0) & (rowSums(1*(PREV[,cols] == 0))==length(cols)))   
+  }
+  
+  # Global (no MS)
+  ID <- paste("Global",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs_noMS,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.7))==length(cols))
+  
+  # Prevalent (no MS)
+  ID <- paste("Prevalent",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs_noMS,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.5))==length(cols))
+
+  # LowFrequency (no MS)
+  ID <- paste("LowFrequency",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs_noMS,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols] > 0.2))==length(cols))
+  
+  # Absent
+  ID <- paste("Absent",i,sep="_")
+  cols <- paste("Prevalence",REGION_IDs,i,sep="_")
+  AssCla[,ID] <- 1*(rowSums(1*(PREV[,cols]==0))==length(cols))
+}
+colnames(AssCla)
+```
+
+```{r}
+for(i in DEPTH_IDs)
+{
+  AssCla[,i] <- "Other"
+  AssCla[which(AssCla[,paste("Absent",i,sep="_")]==1),i] <- "Absent"
+  AssCla[which(AssCla[,paste("LowFrequency",i,sep="_")]==1),i] <- "LowFrequency"
+  AssCla[which(AssCla[,paste("Prevalent",i,sep="_")]==1),i] <- "Prevalent"
+  AssCla[which(AssCla[,paste("Global",i,sep="_")]==1),i] <- "Global"
+  # Location-specific
+  for(REGION in REGION_IDs)
+  {
+    AssCla[which(AssCla[,paste("LocationSpecific",REGION,i,"present_absent",sep="_")]==1),i] <- REGION
+  }
+}
+colnames(AssCla)
+table(AssCla[,"SRF"])
+table(AssCla[,"DCM"])
+table(AssCla[,"MES"])
+table(AssCla[,"BAT"])
+
+length(which(AssCla$SRF!="Absent"))
+length(which(AssCla$DCM!="Absent"))
+length(which(AssCla$MES!="Absent"))
+length(which(AssCla$BAT!="Absent"))
+
+table(AssCla[,"SRF"])/length(which(AssCla$SRF!="Absent"))*100
+table(AssCla[,"DCM"])/length(which(AssCla$DCM!="Absent"))*100
+table(AssCla[,"MES"])/length(which(AssCla$MES!="Absent"))*100
+table(AssCla[,"BAT"])/length(which(AssCla$BAT!="Absent"))*100
+
+
+length(which(AssCla$SRF!="Absent" & AssCla$SRF!="LowFrequency" & AssCla$SRF!="Other" & AssCla$SRF!="Prevalent" & AssCla$SRF!="Global"))
+length(which(AssCla$DCM!="Absent" & AssCla$DCM!="LowFrequency" & AssCla$DCM!="Other" & AssCla$DCM!="Prevalent" & AssCla$DCM!="Global"))
+length(which(AssCla$MES!="Absent" & AssCla$MES!="LowFrequency" & AssCla$MES!="Other" & AssCla$MES!="Prevalent" & AssCla$MES!="Global"))
+length(which(AssCla$BAT!="Absent" & AssCla$BAT!="LowFrequency" & AssCla$BAT!="Other" & AssCla$BAT!="Prevalent" & AssCla$BAT!="Global"))
+
+length(which(AssCla$SRF!="Absent" & AssCla$SRF!="LowFrequency" & AssCla$SRF!="Other" & AssCla$SRF!="Prevalent" & AssCla$SRF!="Global"))/length(which(AssCla$SRF!="Absent"))*100
+length(which(AssCla$DCM!="Absent" & AssCla$DCM!="LowFrequency" & AssCla$DCM!="Other" & AssCla$DCM!="Prevalent" & AssCla$DCM!="Global"))/length(which(AssCla$DCM!="Absent"))*100
+length(which(AssCla$MES!="Absent" & AssCla$MES!="LowFrequency" & AssCla$MES!="Other" & AssCla$MES!="Prevalent" & AssCla$MES!="Global"))/length(which(AssCla$MES!="Absent"))*100
+length(which(AssCla$BAT!="Absent" & AssCla$BAT!="LowFrequency" & AssCla$BAT!="Other" & AssCla$BAT!="Prevalent" & AssCla$BAT!="Global"))/length(which(AssCla$BAT!="Absent"))*100
+```
+SRF
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+      10884         229        1361         596         577         298       14566         207         162         152          86 
+
+DCM
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+      21738         147         219        1295         306         133        4743          76         304         105          52 
+
+MES
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+      18754         199         342        2254         422         204        6547          27         301          40          28 
+
+BAT
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+      19019         162         489        1217        1522         516        5904          28         143         109           9 
+
+Present:
+SRF 18234
+DCM 7380
+MES 10364
+BAT 10099
+
+SRF
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+ 59.6906877   1.2558956   7.4640781   3.2686191   3.1644181   1.6343095  79.8837337   1.1352419   0.8884501   0.8336075   0.4716464 
+
+DCM
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+ 294.552846    1.991870    2.967480   17.547425    4.146341    1.802168   64.268293    1.029810    4.119241    1.422764    0.704607 
+
+MES
+     Absent          IO LowFrequency          MS         NAO         NPO       Other   Prevalent         SAO         SPO   Global 
+180.9532999   1.9201081   3.2998842  21.7483597   4.0717870   1.9683520  63.1705905   0.2605172   2.9042841   0.3859514   0.2701660 
+
+BAT
+      Absent           IO  LowFrequency           MS          NAO          NPO        Other    Prevalent          SAO          SPO    Global 
+188.32557679   1.60411922   4.84206357  12.05069809  15.07079909   5.10941677  58.46123379   0.27725517   1.41598178   1.07931478   0.08911773 
+
+Location-specific
+SRF: 2014
+DCM: 2290
+MES: 3420
+BAT: 3669
+
+SRF: 11.0453
+DCM: 31.02981
+MES: 32.99884
+BAT: 36.33033
+
+## Save table
+```{r}
+path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+filename <- "AssociationClassification_AbsentPresent_noMS.tsv"
+write.table(AssCla, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+```
+
+## Number and fraction of classified associations
+```{r}
+v <- c(brewer.pal(8, "Dark2"),"black", "light grey")
+mycol <- c(MS=v[8],
+           NAO=v[7],
+           SAO=v[6],
+           SPO=v[5],
+           NPO=v[4],
+           IO=v[3],
+           LowFrequency=v[2],
+           Prevalent=v[1],
+           Global=v[9],
+           Other=v[10])
+
+dt_temp <- data.frame(Depth=rep(DEPTH_IDs, each = dim(AssCla)[1]),
+                      Type=c(AssCla[,"SRF"], AssCla[,"DCM"], AssCla[,"MES"], AssCla[,"BAT"]))
+dt_temp <- dt_temp[which(dt_temp$Type!="Absent"),]
+head(dt_temp)
+p <- ggplot(dt_temp, aes(x=factor(Depth, levels=rev(DEPTH_IDs)), fill=factor(Type, levels=rev(c("MS","NAO","SAO","SPO","NPO","IO","LowFrequency","Prevalent","Global","Other"))))) +
+            geom_bar(stat = "count") +
+            scale_fill_manual(values = mycol) +
+            xlab("Depth layer") + ylab("Number of associations") +
+            theme_classic() + theme(text = element_text(size=10), legend.position = "none", legend.title = element_blank(),
+                          axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                          axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            coord_flip()
+  filename <- paste(path,"Barplot_NumberAssociations_noMS.pdf",sep="")
+  ggsave(filename, plot = p, height = 3, width = 4)
+  
+p <- ggplot(dt_temp, aes(x=factor(Depth, levels=rev(DEPTH_IDs)), fill=factor(Type, levels=rev(c("MS","NAO","SAO","SPO","NPO","IO","LowFrequency","Prevalent","Global","Other"))))) +
+            geom_bar(position = "fill") +
+            scale_fill_manual(values = mycol) +
+            xlab("Depth layer") + ylab("Fraction of associations") +
+            theme_classic() + theme(text = element_text(size=10), legend.position = "right", legend.title = element_blank(),
+                          axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                          axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            coord_flip()
+  filename <- paste(path,"Barplot_FractionAssociations_noMS.pdf",sep="")
+  ggsave(name, plot = p, height = 3, width = 4)
+```
+
+## Characterization: Prevalence
+```{r}
+dt_temp <- AssCla[,c("Source","Target","SRF","DCM","MES","BAT")]
+dt_Vis <- data.frame(Source=character(),
+                     Target=character(),
+                     Type=character(),
+                     Prevalence=double(),
+                     Region=character(),
+                     Depth=character(),
+                     stringsAsFactors = FALSE)
+     
+for(i in DEPTH_IDs)
+{
+  for(REGION in REGION_IDs)
+  {
+     prev <- paste("Prevalence",REGION,i,sep="_")
+     dt_temp <- cbind(merge(AssCla[,c("Source","Target",i)], PREV[,c("Source","Target",prev)], by=c("Source","Target"), all=TRUE),
+                      Region = REGION,
+                      Depth = i)
+     colnames(dt_temp)[which(colnames(dt_temp)==prev)] <- "Prevalence"
+     colnames(dt_temp)[which(colnames(dt_temp)==i)] <- "Type"
+     dt_Vis <- rbind(dt_Vis, dt_temp)
+  }
+}
+dt_Vis <- dt_Vis[which(dt_Vis$Type!="Absent" & dt_Vis$Type!="Other" & dt_Vis$Prevalence>0),]
+length(which(dt_Vis$Type=="MS" || dt_Vis$Type=="NAO" || dt_Vis$Type=="SAO" || dt_Vis$Type=="SPO" || dt_Vis$Type=="NPO" || dt_Vis$Type=="IO"))
+dt_Vis$Type[which(dt_Vis$Type=="MS")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="NAO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="SAO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="SPO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="NPO")] <- "LocationSpecific"
+dt_Vis$Type[which(dt_Vis$Type=="IO")] <- "LocationSpecific"
+mycol <- c(mycol, LocationSpecific="#E6AB02")
+p <- ggplot(dt_Vis, aes(x=Prevalence,
+                        group = Type,
+                        fill=Type)) + 
+            geom_histogram(alpha=0.6, position="identity") +
+            #geom_density(alpha=0.2) +
+            xlab("Region and depth specific prevalence") + ylab("Frequency") +
+            scale_fill_manual(values = mycol) +
+            theme_classic() +
+            theme(text = element_text(size = 10, color = "black"), legend.position = "bottom", legend.title = element_blank(),
+                  axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                  axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            facet_grid(Depth~Region, scales = "free")
+filename <- paste(path,"Characterization_Prevalence_noMS.pdf",sep="")
+ggsave(filename, plot = p, height = 5, width = 8)
+```
+
+## Characterization: Taxonomy
+```{r}
+myorderSections <- PhylumDivision_IDs
+mygridcolIDs <- PhylumDivision_IDs
+
+dt_Vis <- merge(NW,AssCla, by=c("Source","Target"), all=TRUE)
+dt_Vis <- merge(dt_Vis,PREV, by=c("Source","Target"), all=TRUE)
+
+# Global, Prevalent, and LowFrequency
+for(i in DEPTH_IDs)
+{
+    # Circular Plot
+    ## Initialize the layout
+    #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+    # Global
+    myE <- dt_Vis[which(dt_Vis[,i]=="Global"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"Global",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"NO_MS_CharacterizationTaxonomy_",i,"_Global.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+    
+    # Prevalent
+    myE <- dt_Vis[which(dt_Vis[,i]=="Prevalent"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"Prevalent",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"NO_MS_CharacterizationTaxonomy_",i,"_Prevalent.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+    
+    # LowFrequency
+    myE <- dt_Vis[which(dt_Vis[,i]=="LowFrequency"),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence" )]
+    print(paste(i,"LowFrequency",dim(myE)[1]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste(path,"NO_MS_CharacterizationTaxonomy_",i,"_LowFrequency.pdf",sep="")
+      pdf(file=filename, width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+}
+```
+[1] "SRF Global 86"
+[1] "SRF Prevalent 207"
+[1] "SRF LowFrequency 1361"
+
+[1] "DCM Global 52"
+[1] "DCM Prevalent 76"
+[1] "DCM LowFrequency 219"
+
+[1] "MES Global 28"
+[1] "MES Prevalent 27"
+[1] "MES LowFrequency 342"
+
+[1] "BAT Global 9"
+[1] "BAT Prevalent 28"
+[1] "BAT LowFrequency 489"
+
+# Highly prevalent regional associations
+```{r}
+path <- paste(PATH,"05_ClassifyingAssociations/")
+filename <- paste(path,"AssociationClassification_AbsentPresent_noMS.tsv",sep="")
+dt_temp <- read.table(filename,header = TRUE)[,c("Source","Target","SRF","DCM","MES","BAT")]
+regionIDs <- "MS_NAO_SAO_SPO_NPO_IO"
+for(i in c("SRF","DCM","MES","BAT"))
+{
+  dt_temp[,paste("Regional",i,sep="_")] <- 0
+  for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    dt_temp[which(dt_temp[,i]==j),paste("Regional",i,sep="_")] <- 1
+  }
+}
+dt_temp$Regional <- dt_temp$Regional_SRF + dt_temp$Regional_DCM + dt_temp$Regional_MES + dt_temp$Regional_BAT
+dt_temp <- dt_temp[which(dt_temp$Regional>0),]
+
+path <- paste(PATH,"04_Prevalence/")
+filename <- paste(path,"EdgePrevalence.tsv",sep="")
+PREV <- read.table(filename, header = TRUE)
+dt_temp <- merge(dt_temp, PREV, by=c("Source","Target"), all.x=TRUE, all.y=FALSE)
+
+dt_temp$HighlyPrevalent <- 0
+for(i in c("SRF","DCM","MES","BAT"))
+{
+  for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    dt_temp$HighlyPrevalent[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7)] <- dt_temp$HighlyPrevalent[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7)] + 1
+  }
+}
+hist(dt_temp$HighlyPrevalent)
+dt_temp <- dt_temp[which(dt_temp$HighlyPrevalent>0),]
+
+dt_temp$HighlyPrevalent_Regional <- 0
+for(i in c("SRF","DCM","MES","BAT"))
+{
+  for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    dt_temp$HighlyPrevalent_Regional[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j)] <-
+      dt_temp$HighlyPrevalent_Regional[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j)] + 1
+  }
+}
+hist(dt_temp$HighlyPrevalent_Regional) # max is 1!
+dt_temp <- dt_temp[which(dt_temp$HighlyPrevalent_Regional>0),]
+colnames(dt_temp)
+dt_HighPrevalentRegional <- dt_temp[c("Source","Target")]
+dt_HighPrevalentRegional$Region <- NA
+dt_HighPrevalentRegional$Depth <- NA
+dt_HighPrevalentRegional$Prevalence <- NA
+for(i in c("SRF","DCM","MES","BAT"))
+{
+  for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    dt_HighPrevalentRegional$Region[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j)] <- j
+    dt_HighPrevalentRegional$Depth[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j)] <- i
+    dt_HighPrevalentRegional$Prevalence[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j)] <- 
+    dt_temp[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0.7 & dt_temp[,i]==j),paste("Prevalence",j,i,sep="_")]
+  }
+}
+dt_HighPrevalentRegional$Type <- paste(substr(dt_HighPrevalentRegional$Source,1,3), substr(dt_HighPrevalentRegional$Target,1,3), sep="_")
+dt_HighPrevalentRegional$Type[which(dt_HighPrevalentRegional$Type=="Prok_Euk")] <- "Euk_Prok"
+table(dt_HighPrevalentRegional[,c("Type")])
+table(dt_HighPrevalentRegional[,c("Region","Depth","Type")])
+table(dt_HighPrevalentRegional[,c("Region","Depth")])
+
+path <- paste(PATH,"00_Tables")
+filename <- paste(path,"Nodes_Taxa.tsv",sep="")
+TAX <- read.table(filename, header = TRUE)
+dt_HighPrevalentRegional <- merge(dt_HighPrevalentRegional, TAX[,c("ID","PhylumDivision")], by.x="Source", by.y="ID", all.x=TRUE, all.y=FALSE)
+colnames(dt_HighPrevalentRegional)[which(colnames(dt_HighPrevalentRegional)=="PhylumDivision")] <- "Source_PhylumDivision"
+dt_HighPrevalentRegional <- merge(dt_HighPrevalentRegional, TAX[,c("ID","PhylumDivision")], by.x="Target", by.y="ID", all.x=TRUE, all.y=FALSE)
+colnames(dt_HighPrevalentRegional)[which(colnames(dt_HighPrevalentRegional)=="PhylumDivision")] <- "Target_PhylumDivision"
+taxa <- as.data.frame(table(dt_HighPrevalentRegional[,c("Source_PhylumDivision","Target_PhylumDivision")]))
+taxa <- taxa[which(taxa$Freq>0),]
+
+path <- paste(PATH,"05_ClassifyingAssociations",sep="")
+filename <- paste(path,"HighlyPrevalentRegionalAssociations.txt",sep="")
+write.table(dt_HighPrevalentRegional, filename, col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+```
+Euk_Euk Euk_Pro Pro_Pro 
+     39      24     235 
+     
+     Depth
+Region BAT DCM MES SRF
+   IO    0   2   1   0
+   MS  123   8   5  48
+   NPO   1   0   0   0
+   SAO   1   4   0   0
+   SPO   0 105   0   0
+   
+   
+, , Type = Euk_Euk
+      Depth
+Region BAT DCM MES SRF
+   IO    0   0   1   0
+   MS    3   7   0  17
+   NPO   1   0   0   0
+   SAO   0   1   0   0
+   SPO   0   9   0   0
+
+, , Type = Euk_Pro
+
+      Depth
+Region BAT DCM MES SRF
+   IO    0   1   0   0
+   MS    9   1   0   9
+   NPO   0   0   0   0
+   SAO   0   0   0   0
+   SPO   0   4   0   0
+
+, , Type = Pro_Pro
+
+      Depth
+Region BAT DCM MES SRF
+   IO    0   1   0   0
+   MS  111   0   5  22
+   NPO   0   0   0   0
+   SAO   1   3   0   0
+   SPO   0  92   0   0

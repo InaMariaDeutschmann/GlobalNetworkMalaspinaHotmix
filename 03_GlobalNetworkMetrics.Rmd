@@ -1,0 +1,301 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Global network metrics
+## Required Packages
+```{r, echo=FALSE}
+library(igraph)
+library(tnet)    # https://toreopsahl.com/2010/03/20/closeness-centrality-in-networks-with-disconnected-components/
+library(ggplot2)
+library(reshape2)
+theme_set(theme_minimal())
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+G <- graph_from_edgelist(as.matrix(NW[,c("Source","Target")]))
+vcount(G)
+ecount(G)
+```
+5448 nodes and 29118 edges
+
+## function: get_nw_properties(dt)
+```{r}
+get_nw_proterties <- function(dt, col_associationScore, ID){
+  parameters <- c('num_nodes', 'num_edges', 'edge_density', 'num_pos_edges', 'portion_pos_edges', 'num_neg_edges', 'portion_neg_edges',
+                  'average_pos_association_strength','average_neg_association_strength',
+                  'transitivity_global_clusering_coef', 'transitivity_ave_clustering_coef_mean_local',
+                  'ave_path_length', 'diameter', 'mean_degree', 'degreecentralization',
+                  'assortativity_nominal_EukProk', 'assortativity_degree',
+                  'ave_node_betweenness', 'ave_edge_betweenness', 'betweennesscentralization',
+                  'ave_closeness', 'closenesscentralization', 'closenesscentralization_disconnected_graphs', 'closenesscentralization_disconnected_graphs_normalized')
+
+  NWpropOverview <- data.frame(newNW = rep(0, length(parameters)))
+  rownames(NWpropOverview) <- parameters
+
+  # new entry
+  NWpropOverview$newNW
+
+  # Create igraph object
+  G <- graph_from_data_frame(dt, directed = FALSE)
+
+  # number of nodes without isolated nodes
+  NWpropOverview['num_nodes', 'newNW'] <- vcount(G)
+
+  # number of edges (`num_edges`) 
+  NWpropOverview['num_edges', 'newNW'] <- ecount(G)
+
+  # edge density (`edge_density`): The proportion of present edges from all possible edges in the network.
+  NWpropOverview['edge_density', 'newNW'] <- edge_density(simplify(G), loops = FALSE)
+
+  # number of positive edges (`num_pos_edges`)
+  NWpropOverview['num_pos_edges', 'newNW'] <- sum(dt[,col_associationScore]>0)
+
+  # percentage of postive edges (`portion_pos_edges`)
+  NWpropOverview['portion_pos_edges', 'newNW'] <- NWpropOverview['num_pos_edges', 'newNW'] / NWpropOverview['num_edges', 'newNW']
+
+  # number of negativee edges (`num_neg_edges`)
+  NWpropOverview['num_neg_edges', 'newNW'] <- sum(dt[,col_associationScore]<0)
+
+  # percentage of negative edges (`portion_neg_edges`)
+  NWpropOverview['portion_neg_edges', 'newNW'] <- NWpropOverview['num_neg_edges', 'newNW'] / NWpropOverview['num_edges', 'newNW']
+  
+  # average positive association strength (`average_pos_association_strength`)
+  NWpropOverview['average_pos_association_strength', 'newNW'] <- mean(dt[dt[,col_associationScore]>0,col_associationScore])
+  
+  # average negative association stength (`average_neg_association_strength`)
+  NWpropOverview['average_neg_association_strength', 'newNW'] <- mean(dt[dt[,col_associationScore]<0,col_associationScore])
+
+  # transitivity of a graph
+  NWpropOverview['transitivity_global_clusering_coef', 'newNW'] <- transitivity(G, type="global")
+  NWpropOverview['transitivity_ave_clustering_coef_mean_local', 'newNW'] <- transitivity(G, type="average")
+
+  # average path length (`ave_path_length`): Average path length: the mean of the shortest distance between each pair of nodes in the network (in both directions for directed graphs).
+  NWpropOverview['ave_path_length', 'newNW'] <- average.path.length(G, directed = FALSE, unconnected = TRUE)
+  # mean_distance(g, directed=F) would also work
+
+  # diameter (`diameter`): longest shortest path between two nodes in the network.
+  NWpropOverview['diameter', 'newNW'] <- diameter(G, directed = FALSE, weights=NA)
+
+  # average degree (`ave_degree`) (for each node-> histogram) (degree distribution)
+  NWpropOverview['mean_degree', 'newNW'] <- mean(igraph::degree(G, mode="all"))
+
+  # degreecentralization
+  NWpropOverview['degreecentralization', 'newNW'] <- centr_degree(G, mode="all", normalized=T)$centralization
+
+  # assortativity_nominal_EukProk
+  types <- substr(V(G)$name,1,3)
+  types[which(types=="Euk")] <- 1
+  types[which(types=="Pro")] <- 2
+  NWpropOverview['assortativity_nominal_EukProk', 'newNW'] <- assortativity_nominal(G, types, directed = FALSE)
+
+  # assortativity_degree
+  NWpropOverview['assortativity_degree', 'newNW'] <- assortativity_degree(G, directed = FALSE)
+
+  #Betweenness (centrality based on a broker position connecting others)
+  #Number of geodesics that pass through the node or the edge.
+  # average betweenness (`ave_betweenness`)
+  NWpropOverview['ave_node_betweenness', 'newNW'] <- mean(betweenness(G, directed = FALSE, weights = NA))
+  NWpropOverview['ave_edge_betweenness', 'newNW'] <- mean(edge_betweenness(G, directed = FALSE, weights = NA))
+  # betweennesscentralization
+  NWpropOverview['betweennesscentralization', 'newNW'] <- centr_betw(G, directed = FALSE, normalized=T)$centralization
+
+  #Closeness (centrality based on distance to others in the graph)
+  #Inverse of the node???s average geodesic distance to others in the ig.sparccwork.
+  # average closeness (`ave_closeness`)
+  NWpropOverview['ave_closeness', 'newNW'] <- mean(closeness(G, mode = "all", weights = NA))
+
+  # closenesscentralization
+  NWpropOverview['closenesscentralization', 'newNW'] <- centr_clo(G, mode = "all", normalized=T)$centralization
+
+  # closenesscentralization_disconnected_graphs
+  # The network might be undirected. If this is the case, each tie should be mention twice. The symmetrise-function can be used to include reverse version of each tie. -> Thus, each edge is added twice: both ways!
+  ID_mapping <- data.frame(ID=c(1:vcount(G)))
+  rownames(ID_mapping) <- V(G)$name
+  net <- rbind(cbind(i=ID_mapping[dt$Source,"ID"],j=ID_mapping[dt$Target,"ID"],w=rep(1,length(ID_mapping[dt$Source,"ID"]))),
+               cbind(i=ID_mapping[dt$Target,"ID"],j=ID_mapping[dt$Source,"ID"],w=rep(1,length(ID_mapping[dt$Source,"ID"]))))
+
+  Closeness_alternative <- closeness_w(net, gconly = FALSE)
+  NWpropOverview['closenesscentralization_disconnected_graphs', 'newNW'] <- mean(Closeness_alternative[,"closeness"])
+  NWpropOverview['closenesscentralization_disconnected_graphs_normalized', 'newNW'] <- mean(Closeness_alternative[,"n.closeness"]) 
+
+  # update ID
+  colnames(NWpropOverview)[which(colnames(NWpropOverview)=="newNW")] <- ID
+
+  return(NWpropOverview)
+}
+```
+
+## global metrics for static nw
+```{r}
+NWprop_static <- get_nw_proterties(NW[,c(1:3)], "Weight", "staticNW")
+NWprop_static <- t(NWprop_static)
+NWprop_static <- cbind(rownames(NWprop_static),NWprop_static)
+colnames(NWprop_static)[1] <- "Sample"
+```
+
+## global metrics for sample-specific subnetworks
+```{r}
+COLNAMES <- colnames(NW)[grep("_",colnames(NW))]
+NWprop <- get_nw_proterties(NW[which(NW[,COLNAMES[1]]==1),], "Weight", COLNAMES[1])
+
+for(i in c(2:length(COLNAMES)))
+{
+  NWpropnew <- get_nw_proterties(NW[which(NW[,COLNAMES[i]]==1),], "Weight", COLNAMES[i])
+  NWprop <- cbind(NWprop, NWpropnew)
+}
+
+NWprop <- t(NWprop)
+NWprop <- cbind(rownames(NWprop),NWprop)
+colnames(NWprop)[1] <- "Sample"
+```
+
+## Save tables
+```{r}
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+filename <- "NW_properties_overview_staticNW.tsv"
+write.table(NWprop_static, paste(path,file,sep=""), row.names = FALSE, col.names = TRUE, quote = FALSE, sep = "\t", dec = ".")
+filename <- "NW_properties_overview_sampleSpecificNW.tsv"
+write.table(NWprop, paste(path,file,sep=""), row.names = FALSE, col.names = TRUE, quote = FALSE, sep = "\t", dec = ".")
+```
+
+## Visualization
+### Read in files
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+filename <- "NW_properties_overview_sampleSpecificNW.tsv"
+NWprop <- read.table(paste(path,filename,sep=""), header = TRUE)
+```
+
+### Boxplot
+```{r}
+NWid <- c("num_nodes", "num_edges", "edge_density", "average_pos_association_strength", "transitivity_global_clusering_coef", "ave_path_length", "assortativity_nominal_EukProk", "assortativity_degree")
+
+dt_temp <- merge(NWprop[,c("Sample",NWid)],SAM[,c("Sample","layer","OceanRegion")], by="Sample", all=TRUE)
+dt_temp <- melt(dt_temp)
+p <- ggplot(dt_temp, aes(x=factor(layer, levels = c("SRF","EPI","DCM","MES","BAT")), y=value)) + geom_violin() + geom_boxplot(width=0.1) +
+             xlab("") + ylab("") + theme_classic() +
+             theme(text = element_text(size = 12)) +
+             facet_grid(variable~., scales = "free")
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+filename <- "GlobalMetrics_Layer.pdf"
+ggsave(paste(path,filename,sep=""), plot=p, width=4,height=8)
+```
+
+### Exclude outlier for better visualization
+Sample num_nodes num_edges edge_density average_pos_association_strength transitivity_global_clusering_coef ave_path_length assortativity_nominal_EukProk assortativity_degree layer
+366 MalaVP_DNA_D2795_4000m        32        37   0.07459677                        0.2238359                          0.1666667        2.995536                     0.6525822           0.08808081   BAT
+    OceanRegion
+366         NAO
+-> this edge density will be set to "NA" for visualization purposes!
+```{r}
+NWid <- c("num_nodes", "num_edges", "edge_density", "average_pos_association_strength", "transitivity_global_clusering_coef", "ave_path_length", "assortativity_nominal_EukProk", "assortativity_degree")
+
+dt_temp <- merge(NWprop[,c("Sample",NWid)],SAM[,c("Sample","layer","OceanRegion")], by="Sample", all=TRUE)
+dt_temp[which(dt_temp$edge_density>0.05),]
+dt_temp[which(dt_temp$edge_density>0.05),"edge_density"] <- NA
+dt_temp <- melt(dt_temp)
+p <- ggplot(dt_temp, aes(x=factor(layer, levels = c("SRF","EPI","DCM","MES","BAT")), y=value)) + geom_violin() + geom_boxplot(width=0.1) +
+             xlab("") + ylab("") + theme_classic() +
+             theme(text = element_text(size = 12)) +
+             facet_grid(variable~., scales = "free")
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+filename <- "GlobalMetrics_Layer_edgeDensity_missingValueForMax0.7.pdf"
+ggsave(paste(path,filename,sep=""), plot=p, width=4,height=8)
+```
+
+### Boxplot for each Layer
+```{r}
+dt_temp <- merge(NWprop[,c("Sample",NWid)],SAM[,c("Sample","layer","OceanRegion")], by="Sample", all=TRUE)
+dt_temp[which(dt_temp$edge_density>0.05),"edge_density"] <- NA
+dt_temp <- melt(dt_temp)
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+for(i in c("SRF","EPI","DCM","MES","BAT"))
+{
+  p <- ggplot(dt_temp[which(dt_temp$layer==i),], aes(x=factor(OceanRegion, levels = c("MS","NAO","SAO","SPO","NPO","IO")), y=value)) + geom_violin() + geom_boxplot(width=0.1) +
+             xlab("") + ylab("") + theme_classic() +
+             theme(text = element_text(size = 12)) +
+             facet_grid(variable~., scales = "free")
+ filename <- paste("GlobalMetrics_DiffRegions_",i,".pdf",sep="")
+ ggsave(paste(path,filename,sep=""), plot=p, width=4,height=8)
+}
+```
+
+### Boxplot including Layer and Region
+```{r}
+dt_temp <- merge(NWprop[,c("Sample",NWid)],SAM[,c("Sample","layer","OceanRegion")], by="Sample", all=TRUE)
+dt_temp[which(dt_temp$edge_density>0.05),"edge_density"] <- NA
+dt_temp <- melt(dt_temp)
+
+ p <- ggplot(dt_temp, aes(x=factor(layer, levels = c("SRF","DCM","MES","BAT")), y=value)) + geom_violin() + geom_boxplot(width=0.1) +
+             xlab("") + ylab("") + theme_classic() +
+             theme(text = element_text(size = 12)) +
+             facet_grid(variable~factor(OceanRegion, levels = c("MS","NAO","SAO","SPO","NPO","IO")), scales = "free")
+ path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+ filename <- paste("GlobalMetrics_DiffRegions_Layer_edgeDensity_missingValueForMax0.7.pdf",sep="")
+ ggsave(paste(path,filename,sep=""), plot=p, width=12, height=14)
+```
+
+## Stats
+Number nodes and edges
+```{r}
+summary(NWprop$num_nodes)
+summary(NWprop$num_edges)
+```
+number of nodes
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   32.0   408.0   562.0   592.4   758.0  1306.0 
+  
+number od egdes
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+     37     968    1554    1776    2352    5598 
+   
+```{r}
+hist(NWprop$num_nodes, breaks=100)
+hist(NWprop$num_edges, breaks=100)
+hist(NWprop$edge_density, breaks=100)
+```
+
+Other metrics
+```{r}
+summary(NWprop$edge_density)
+summary(NWprop$transitivity_global_clusering_coef)
+summary(NWprop$ave_path_length)
+summary(NWprop$assortativity_degree)
+summary(NWprop$assortativity_nominal_EukProk)
+summary(NWprop$average_pos_association_strength)
+```
+> summary(NWprop$edge_density)
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+0.004770 0.008320 0.009735 0.010703 0.012138 0.074597 
+
+> summary(NWprop$transitivity_global_clusering_coef)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+0.02089 0.03576 0.04749 0.04720 0.05484 0.16667 
+
+> summary(NWprop$ave_path_length)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  2.996   4.211   4.471   4.647   4.930   9.082 
+  
+> summary(NWprop$assortativity_degree)
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+-0.05335  0.17069  0.21918  0.20926  0.25530  0.38482
+
+> summary(NWprop$assortativity_nominal_EukProk)
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max.     NA's 
+-0.01869  0.77821  0.83933  0.81124  0.87959  1.00000        1  
+
+> summary(NWprop$average_pos_association_strength)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ 0.1775  0.1892  0.1984  0.1981  0.2059  0.2412 

@@ -1,0 +1,797 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# From constructing the single static network to sample-specific subnetworks
+## Required Packages
+```{r}
+library(ggplot2)
+library(factoextra)
+```
+
+## Parameter
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+```
+-> Note: This is the PATH-variable for the R-code and the path variables for FlashWeave and EnDED has to be adjusted manually
+
+## Network construction with FlashWeave
+- Julia Version 1.5.3 (2020-11-09)
+- FlashWeave 0.18.0 (https://github.com/meringlab/FlashWeave.jl)
+    Tackmann, Janko, Joao Frederico Matias Rodrigues, and Christian von Mering. "Rapid inference
+    of direct interactions in large-scaleecological networks from heterogeneous microbial
+    sequencing data." Cell Systems (2019).
+
+sensitive - enable fine-grained associations (FlashWeave-S, FlashWeaveHE-S), sensitive=false results in the fast modes FlashWeave-F or FlashWeaveHE-F
+heterogeneous - enable heterogeneous mode for multi-habitat or -protocol data with at least thousands of samples (FlashWeaveHE)
+max_k - maximum size of conditioning sets, high values can strongly increase runtime. max_k=0 results in no conditioning (univariate mode)
+alpha - threshold used to determine statistical significance
+n_obs_min - don't compute associations between variables having less reliable samples (i.e. non-zero if heterogeneous=true) than this number. -1: automatically choose a threshold.
+
+FlashWeave currently does not support missing data, please remove all samples with missing entries (both in OTU and meta data tables) prior to running FlashWeave.
+-> Thus, we use FlashWeave for network construction and EnDED for environmentally-driven edge detection
+```{julia}
+import Pkg; Pkg.add("FlashWeave")
+using FlashWeave
+pkgs = Pkg.installed();
+pkgs["FlashWeave"]
+data_path="/GlobalNetworkMalaspinaHotmix/00_Tables/clr_ASV.tsv"
+netw_results = learn_network(data_path, sensitive=true, heterogeneous=true, normalize=false, transposed=true)
+save_network(replace(data_path, ".tsv" => ".gml"), netw_results)
+save_network(replace(data_path, ".tsv" => ".edgelist"), netw_results)
+```
+	Run information:
+	sensitive - true
+	heterogeneous - true
+	max_k - 3
+	alpha - 0.01
+	sparse - false
+	workers - 1
+	OTUs - 5457
+	MVs - 0
+Automatically setting 'n_obs_min' to 20 for enhanced reliability.
+
+Time passed: 1208. Finished nodes: 5378. Remaining nodes: 79
+Convergence times: 1113.9875180721283 93.65307307243347 0.08407012785431375 1140
+Current nodes/edges: 5457 / 31649
+Degree stats:
+Summary Stats:
+Length:         5457
+Missing Count:  0
+Mean:           11.599414
+Minimum:        0.000000
+1st Quartile:   9.000000
+Median:         11.000000
+3rd Quartile:   14.000000
+Maximum:        27.000000
+
+Latest convergence step change: 0.44502
+
+Postprocessing..
+Complete.
+
+Finished inference. Total time taken: 1503.839s
+
+Mode:
+FlashWeaveHE - sensitive (conditional)
+
+Network:
+31966 interactions between 5457 variables (5457 OTUs and 0 MVs)
+
+Unfinished variables:
+none
+
+Rejections:
+not tracked
+
+-> Note: the following code stores the FlashWeave network in the 00_Tables folder, which we manually moved to the 02_NetworkConstruction/FlashWeave folder
+-> Rename columns and store as tsv file (needed for gephi network visualization)
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/01_FlashWeave/",sep="")
+filename <- "clr_ASV.edgelist"
+FW <- read.table(paste(path,filename,sep=""), header = FALSE)
+colnames(FW) <- c("Source","Target","Weight")
+filename <- "clr_ASV.tsv"
+write.table(FW,paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+```
+
+# Environmentally-driven edge detection with EnDED
+Preparing networks for EnDED (https://github.com/InaMariaDeutschmann/EnDED)
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ENV.txt"
+env <- read.table(paste(path,filename,sep=""), header = TRUE)
+FW_ENV <- data.frame(Source=unique(c(as.character(FW$Source), as.character(FW$Target))))
+path <- paste(PATH,"02_NetworkConstruction/02_EnDED/",sep="")
+for(i in c(1:9))
+{
+  FW_ENV$Target <- as.character(env$ID[i])
+  filename <- paste("FW_",as.character(env$ID[i]),".tsv",sep="")
+  write.table(FW_ENV, paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE, dec = ".")
+}
+filename <- "FW.tsv"
+write.table(FW[,c(1,2)], paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE, dec = ".")
+
+# Segmentation fault for most ENV -> create subfiles removing NAs
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ENV.txt"
+env <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(env) <- env$ID
+env$ID <- NULL
+env <- t(env)
+filename <- "ASV.txt"
+asv <- read.table(paste(path,filename,sep=""), header = TRUE)
+env <- env[as.character(colnames(asv[,-1])),]
+path <- paste(PATH,"02_NetworkConstruction/02_EnDED/",sep="")
+for(i in c(1:9))
+{
+  stations_noNA <- as.character(rownames(env)[which(!is.na(env[,i]))])
+  env_temp <- cbind(colnames(env)[i], t(env[stations_noNA,i]))
+  colnames(env_temp) <- c("ID",stations_noNA)
+  filename <- paste(colnames(env)[i],".tsv",sep="")
+  write.table(env_temp, paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE, dec = ".")
+
+  asv_temp <- asv[,c("ID",stations_noNA)]
+  filename <- paste("ASV_",colnames(env)[i],".tsv",sep="")
+  write.table(asv_temp, paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE, dec = ".")
+  print(paste(colnames(env)[i],dim(env_temp)[2],dim(asv_temp)[2],length(stations_noNA)))
+}
+```
+last number = stations without missing data, the data tables have 1 more for the "ID"-column
+[1] "ENV_Depth 398 398 397"
+[1] "ENV_Temperature 396 396 395"
+[1] "ENV_Salinity 396 396 395"
+[1] "ENV_Chlorophyll 316 316 315"
+[1] "ENV_Fluorescence 395 395 394"
+[1] "ENV_NO2 110 110 109"
+[1] "ENV_NO3_cruise_and_WOA13 362 362 361"
+[1] "ENV_PO4_cruise_and_PO4_WOA13 360 360 359"
+[1] "ENV_SiO4cruise_and_SiO4_WOA13 361 361 360"
+-> remove Depth, Chlorophyll and NO2
+
+EnDED
+```{bash}
+# Set Path
+##############################################
+cd GlobalNetworkMalaspinaHotmix/02_NetworkConstruction/02_EnDED/
+
+INPUT_NW=FW.tsv
+INPUT_ASV=../../00_Tables/ASV.txt
+OUTPUT_NW=NW_CoOcc.tsv
+METHODS=CO
+./EnDED/build/EnDED --input_network_file $INPUT_NW --methods ${METHODS} --II_DPI_abundance_file $INPUT_ASV --output_network_file $OUTPUT_NW
+rm triplet.txt
+echo log_* > LOG_NW_CoOcc.tsv
+less log_* >> LOG_NW_CoOcc.tsv
+rm log_*
+
+for ENVID in NO3_cruise_and_WOA13 PO4_cruise_and_PO4_WOA13 SiO4cruise_and_SiO4_WOA13 Temperature Salinity Fluorescence
+do
+   # Parameters
+   ##############################################
+   less FW.tsv > NW_temp.txt
+   tail -n+2 FW_ENV_$ENVID.tsv >> NW_temp.txt
+   INPUT_NW=NW_temp.txt
+   INPUT_ASV=ASV_ENV_$ENVID.tsv
+   INPUT_ENV=ENV_$ENVID.tsv
+   OUTPUT_TRIPLET=EnDED_FW_Triplet_ENV_$ENVID.tsv
+   OUTPUT_NW=EnDED_FW_ENV_$ENVID.tsv
+
+   # Run with methods: SP,II,DPI,CO
+   ##############################################
+   #METHODS=II,DPI,CO
+   METHODS=II,DPI
+ 
+   ## EnDED
+   ##############################################
+   ./EnDED/build/EnDED --input_network_file $INPUT_NW --methods ${METHODS} --II_permutation_iteration 10000 --II_DPI_abundance_file $INPUT_ASV --II_DPI_ENVparameter_file $INPUT_ENV --output_network_file $OUTPUT_NW --output_triplet_info $OUTPUT_TRIPLET
+   echo log_* > LOG_EnDED_NW_ENV_$ENVID.tsv
+   less log_* >> LOG_EnDED_NW_ENV_$ENVID.tsv
+   rm log_*
+done
+rm NW_temp.txt
+```
+
+Combine different EnDED runs
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/01_FlashWeave/",sep="")
+filename <- "clr_ASV.tsv"
+FW <- read.table(paste(path,filename,sep=""), header = TRUE)
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ENV.txt"
+env <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(env) <- env$ID
+env$ID <- NULL
+env <- t(env)
+filename <- "ASV.txt"
+asv <- read.table(paste(path,filename,sep=""), header = TRUE)
+env <- env[as.character(colnames(asv[,-1])),]
+envIDs <- c("ENV_Temperature", "ENV_Salinity", "ENV_Fluorescence", "ENV_NO3_cruise_and_WOA13", "ENV_PO4_cruise_and_PO4_WOA13", "ENV_SiO4cruise_and_SiO4_WOA13")
+path <- paste(PATH,"02_NetworkConstruction/02_EnDED/",sep="")
+for(e in envIDs)
+{
+  filename <- paste("EnDED_FW_",e,".tsv",sep="")
+  dt_temp <- read.table(paste(path,filename,sep=""),header=TRUE, stringsAsFactors=FALSE)
+  dt_temp$II_indirect <- 1*(dt_temp$InterationInformation<0 & dt_temp$II_p_value<0.05)
+  FW <- merge(FW, dt_temp[,c("Source","Target","InterationInformation","II_p_value","II_indirect","DataProcessingInequality_MI_rank",  "DataProcessingInequality_indirect", "COMBI_II_DPI")], by=c("Source","Target"))
+  colnames(FW)[which(colnames(FW)=="InterationInformation")] <- paste("II",e,sep="_")
+  colnames(FW)[which(colnames(FW)=="II_p_value")] <- paste("II_p_value",e,sep="_")
+  colnames(FW)[which(colnames(FW)=="II_indirect")] <- paste("II_indirect",e,sep="_")
+  colnames(FW)[which(colnames(FW)=="DataProcessingInequality_MI_rank")] <- paste("DPI_MI_rank",e,sep="_")
+  colnames(FW)[which(colnames(FW)=="DataProcessingInequality_indirect")] <- paste("DPI_indirect",e,sep="_")
+  colnames(FW)[which(colnames(FW)=="COMBI_II_DPI")] <- paste("COMBI_II_DPI",e,sep="_") 
+  print(paste(e,": ",length(which(dt_temp$COMBI_II_DPI==0))," indirect and ", length(which(dt_temp$COMBI_II_DPI==1)), " not indirect"))
+}
+FW$union_indirect_all <- rowSums(FW[,grep("COMBI_II_DPI",colnames(FW))])
+FW$union_indirect_FluNO3PO4SalSiO4Temp <- rowSums(FW[,c("COMBI_II_DPI_ENV_Fluorescence",
+                                                        "COMBI_II_DPI_ENV_NO3_cruise_and_WOA13",
+                                                        "COMBI_II_DPI_ENV_PO4_cruise_and_PO4_WOA13",
+                                                        "COMBI_II_DPI_ENV_Salinity",
+                                                        "COMBI_II_DPI_ENV_SiO4cruise_and_SiO4_WOA13",
+                                                        "COMBI_II_DPI_ENV_Temperature")])
+plot(FW$union_indirect_all, FW$union_indirect_FluNO3PO4SalSiO4Temp)
+```
+
+[1] "ENV_Temperature :  622  indirect and  31344  not indirect"
+[1] "ENV_Salinity :  67  indirect and  31899  not indirect"
+[1] "ENV_Fluorescence :  4  indirect and  31962  not indirect"
+[1] "ENV_NO3_cruise_and_WOA13 :  1563  indirect and  30403  not indirect"
+[1] "ENV_PO4_cruise_and_PO4_WOA13 :  1357  indirect and  30609  not indirect"
+[1] "ENV_SiO4cruise_and_SiO4_WOA13 :  632  indirect and  31334  not indirect"
+
+```{r}
+hist(FW$II_ENV_Temperature, breaks = 100)
+hist(FW$II_ENV_Salinity, breaks = 100)
+hist(FW$II_ENV_Fluorescence, breaks = 100)
+hist(FW$II_ENV_NO3_cruise_and_WOA13, breaks = 100)
+hist(FW$II_ENV_PO4_cruise_and_PO4_WOA13, breaks = 100)
+hist(FW$II_ENV_SiO4cruise_and_SiO4_WOA13, breaks = 100)
+```
+
+```{r}
+hist(FW$II_p_value_ENV_Temperature, breaks = 100)
+hist(FW$II_p_value_ENV_Salinity, breaks = 100)
+hist(FW$II_p_value_ENV_Fluorescence, breaks = 100)
+hist(FW$II_p_value_ENV_NO3_cruise_and_WOA13, breaks = 100)
+hist(FW$II_p_value_ENV_PO4_cruise_and_PO4_WOA13, breaks = 100)
+hist(FW$II_p_value_ENV_SiO4cruise_and_SiO4_WOA13, breaks = 100)
+```
+Remove environmentally driven edges
+```{r}
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==0))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==1))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==2))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==3))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==4))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==5))
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp==6))
+```
+[1] 0
+[1] 0
+[1] 10 -> removed by 4
+[1] 308 -> removed by 3
+[1] 751 -> removed by 2
+[1] 1779 -> removed by 1
+[1] 29118 -> removed by none
+
+```{r}
+length(which(FW$union_indirect_FluNO3PO4SalSiO4Temp!=6))
+```
+2848
+
+How many if only II?
+```{r}
+colnames(FW)
+table(rowSums(FW[,grep("II_indirect",colnames(FW))]))
+length(which(rowSums(FW[,grep("II_indirect",colnames(FW))])!=0))
+length(which(rowSums(FW[,grep("II_indirect",colnames(FW))])!=0))/dim(FW)[1]*100
+```
+    0     1     2     3     4     5 
+14800  9456  4633  2310   697    70 
+[1] 17166
+[1] 53.70081
+
+
+```{r}
+FW <- merge (FW, dt_temp[,c("Source","Target","MutualInformation")], by=c("Source","Target"))
+plot(x = FW$MutualInformation, y = FW$Weight, pch = 19, cex = 1)
+```
+
+Save network
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_EnDEDinfo.tsv"
+write.table(FW, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
+Filter
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_EnDEDinfo.tsv"
+FW <- read.table(paste(path,filename,sep=""), header = TRUE)
+FW_filtered <- FW[which(FW$union_indirect_FluNO3PO4SalSiO4Temp==6),c("Source","Target","Weight","MutualInformation")]
+```
+
+neg/pos edges
+```{r}
+length(unique(c(as.character(FW$Source), as.character(FW$Target))))
+FW$posneg <- "pos"
+FW$posneg[which(FW$Weight<0)] <- "neg"
+
+table(FW[,c("posneg")])
+table(FW[,c("posneg")])/dim(FW)[1]*100
+
+length(unique(c(as.character(FW_filtered$Source), as.character(FW_filtered$Target))))
+FW_filtered$posneg <- "pos"
+FW_filtered$posneg[which(FW_filtered$Weight<0)] <- "neg"
+
+table(FW_filtered[,c("posneg")])
+table(FW_filtered[,c("posneg")])/dim(FW_filtered)[1]*100
+```
+before removing environmentally driven edges
+[1] 5457
+
+ neg  pos 
+1309 30657 
+
+      neg       pos 
+4.094976  95.905024 
+ 
+ after removing environmentally driven edges
+[1] 5448
+
+ neg  pos 
+940 28178 
+
+      neg       pos 
+3.228244 96.771756 
+ 
+
+# Jaccard-index all 397 samples
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ASV.txt"
+A <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t")
+rownames(A) <- A$ID
+A$ID <- NULL
+
+A_presence <- 1*(A>0)
+
+FW_filtered$Source_Presence <- rowSums(A_presence[as.character(FW_filtered$Source),])
+FW_filtered$Target_Presence <- rowSums(A_presence[as.character(FW_filtered$Target),])
+FW_filtered$intersection <- rowSums(1*((A_presence[as.character(FW_filtered$Source),]+
+                                        A_presence[as.character(FW_filtered$Target),])>1))
+FW_filtered$union <- rowSums(1*((A_presence[as.character(FW_filtered$Source),]+
+                                 A_presence[as.character(FW_filtered$Target),])>0))
+FW_filtered$J <- FW_filtered$intersection/FW_filtered$union
+
+hist(FW_filtered$J, breaks = 100)
+```
+```{r}
+length(which(FW_filtered$J==0))
+min(c(FW_filtered$Source_Presence, FW_filtered$Target_Presence))
+max(c(FW_filtered$Source_Presence, FW_filtered$Target_Presence))
+```
+[1] 120
+[1] 20
+[1] 347
+
+pos vs. neg
+```{r}
+length(which(FW_filtered$Weight>0 & FW_filtered$J<=0.05))
+length(which(FW_filtered$Weight<0 & FW_filtered$J<=0.05))
+```
+14
+515
+
+```{r}
+plot(FW_filtered$Weight, FW_filtered$J, pch = 19, cex = 1)
+```
+
+Jaccard index for each depth layer, each basin, and each basin-depth
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+IDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+for(i in IDs)
+{
+  A_temp <- as.data.frame(A[,as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])])
+  A_presence <- as.data.frame(1*(A_temp>0))
+  rownames(A_presence) <- rownames(A)
+  if(length(which(SAM$OceanRegion_Layer==i))>1)
+  {
+      FW_filtered[,paste(i,"_Source_Presence",sep="")] <- rowSums(A_presence[as.character(FW_filtered$Source),])
+      FW_filtered[,paste(i,"_Target_Presence",sep="")] <- rowSums(A_presence[as.character(FW_filtered$Target),])
+      FW_filtered[,paste(i,"_intersection",sep="")] <- rowSums(1*((A_presence[as.character(FW_filtered$Source),]+
+                                                                   A_presence[as.character(FW_filtered$Target),])>1))
+      FW_filtered[,paste(i,"_union",sep="")] <- rowSums(1*((A_presence[as.character(FW_filtered$Source),]+
+                                                            A_presence[as.character(FW_filtered$Target),])>0))
+  }else{
+      FW_filtered[,paste(i,"_Source_Presence",sep="")] <- A_presence[as.character(FW_filtered$Source),]
+      FW_filtered[,paste(i,"_Target_Presence",sep="")] <- A_presence[as.character(FW_filtered$Target),]
+      FW_filtered[,paste(i,"_intersection",sep="")] <- 1*((A_presence[as.character(FW_filtered$Source),]+
+                                                           A_presence[as.character(FW_filtered$Target),])>1)
+      FW_filtered[,paste(i,"_union",sep="")] <- 1*((A_presence[as.character(FW_filtered$Source),]+
+                                                    A_presence[as.character(FW_filtered$Target),])>0) 
+  }
+  FW_filtered[,paste(i,"_J",sep="")] <- FW_filtered[,paste(i,"_intersection",sep="")]/FW_filtered[,paste(i,"_union",sep="")]
+  FW_filtered[is.na(FW_filtered[,paste(i,"_J",sep="")]),paste(i,"_J",sep="")] <- 0
+}
+```
+
+```{r}
+IDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+for(i in IDs)
+{
+  n <- length(grep(i,SAM$OceanRegion_Layer))
+  id <- paste(i," (",n," samples)",sep="")
+  if(sum(1*FW_filtered[,paste(i,"_intersection",sep="")]>0)>0 & sum(1*(FW_filtered[,paste(i,"_union",sep="")]>0)>0))
+  {
+    hist(FW_filtered[,paste(i,"_J",sep="")], breaks = 100, main = id, xlab = "J")
+  }
+}
+```
+
+Save tables
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_JaccardIndex_intersection_union.tsv"
+write.table(FW_filtered, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+
+JAC <- FW_filtered[,c(1:3,grep("J",colnames(FW_filtered)))]
+filename <- "FW_JaccardIndex.tsv"
+write.table(JAC, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+```
+---> no overall Jaccard-index filtering, but for each OceanRegion - DepthLayer!
+
+```{r}
+IDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+for(i in IDs)
+{
+  print(paste(i, min(SAM$depth[which(SAM$OceanRegion_Layer==i)]), "-", max(SAM$depth[which(SAM$OceanRegion_Layer==i)])))
+  print(paste(i,">0%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0)),
+                "10%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0.1)),
+                "20%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0.2)),
+                "30%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0.3)),
+                "40%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0.4)),
+                "50%",length(which(FW_filtered[,paste(i,"_J",sep="")]>0.5))))
+}
+```
+-> use threshold of J>20% when generating sample-specific subnetworks.
+[1] "MS_SRF 3 - 3"
+[1] "MS_SRF >0% 3710 10% 3631 20% 3263 30% 2881 40% 2375 50% 1797"
+[1] "MS_EPI 12 - 50"
+[1] "MS_EPI >0% 4763 10% 4682 20% 4196 30% 3731 40% 3064 50% 2189"
+[1] "MS_DCM 40 - 130"
+[1] "MS_DCM >0% 5545 10% 5417 20% 4736 30% 4030 40% 3062 50% 2027"
+[1] "MS_MES 200 - 1000"
+[1] "MS_MES >0% 8756 10% 8403 20% 7336 30% 6179 40% 4629 50% 3088"
+[1] "MS_BAT 1100 - 3300"
+[1] "MS_BAT >0% 4497 10% 4263 20% 3694 30% 3171 40% 2506 50% 1830"
+[1] "NAO_SRF 3 - 3"
+[1] "NAO_SRF >0% 15862 10% 15255 20% 13478 30% 11449 40% 8487 50% 5331"
+[1] "NAO_EPI 50 - 50"
+[1] "NAO_EPI >0% 3027 10% 3027 20% 3027 30% 2778 40% 2529 50% 2091"
+[1] "NAO_DCM 70 - 106"
+[1] "NAO_DCM >0% 3865 10% 3865 20% 3738 30% 3480 40% 2973 50% 2212"
+[1] "NAO_MES 200 - 800"
+[1] "NAO_MES >0% 6325 10% 6289 20% 5689 30% 5109 40% 4169 50% 2978"
+[1] "NAO_BAT 1200 - 4539"
+[1] "NAO_BAT >0% 7490 10% 7419 20% 6831 30% 6206 40% 5211 50% 3857"
+[1] "SAO_SRF 3 - 3"
+[1] "SAO_SRF >0% 13118 10% 12768 20% 11026 30% 9269 40% 6842 50% 4353"
+[1] "SAO_DCM 80 - 130"
+[1] "SAO_DCM >0% 4199 10% 4199 20% 4199 30% 3941 40% 3443 50% 2468"
+[1] "SAO_MES 450 - 850"
+[1] "SAO_MES >0% 3937 10% 3937 20% 3740 30% 3440 40% 2687 50% 1614"
+[1] "SAO_BAT 1290 - 4000"
+[1] "SAO_BAT >0% 4143 10% 4130 20% 3886 30% 3605 40% 3049 50% 2254"
+[1] "SPO_SRF 3 - 5"
+[1] "SPO_SRF >0% 12007 10% 11927 20% 10420 30% 8990 40% 6728 50% 4480"
+[1] "SPO_DCM 65 - 65"
+[1] "SPO_DCM >0% 1530 10% 1530 20% 1530 30% 1530 40% 1530 50% 1530"
+[1] "SPO_MES 450 - 650"
+[1] "SPO_MES >0% 2066 10% 2066 20% 2066 30% 2066 40% 1756 50% 1318"
+[1] "SPO_BAT 1500 - 4000"
+[1] "SPO_BAT >0% 3159 10% 3159 20% 3159 30% 3159 40% 2906 50% 2128"
+[1] "NPO_SRF 3 - 3"
+[1] "NPO_SRF >0% 14376 10% 13778 20% 11919 30% 9907 40% 7323 50% 4736"
+[1] "NPO_DCM 37 - 110"
+[1] "NPO_DCM >0% 3100 10% 3100 20% 3100 30% 3100 40% 2568 50% 1968"
+[1] "NPO_MES 200 - 780"
+[1] "NPO_MES >0% 4197 10% 4197 20% 3781 30% 3343 40% 2583 50% 1625"
+[1] "NPO_BAT 2000 - 4000"
+[1] "NPO_BAT >0% 5198 10% 5185 20% 4834 30% 4510 40% 4009 50% 3372"
+[1] "IO_SRF 3 - 3"
+[1] "IO_SRF >0% 14307 10% 13646 20% 11736 30% 9602 40% 6912 50% 4396"
+[1] "IO_DCM 86 - 130"
+[1] "IO_DCM >0% 3411 10% 3411 20% 3411 30% 3411 40% 2855 50% 2310"
+[1] "IO_MES 400 - 950"
+[1] "IO_MES >0% 4654 10% 4654 20% 4344 30% 3961 40% 3083 50% 2082"
+[1] "IO_BAT 1065 - 4000"
+[1] "IO_BAT >0% 2928 10% 2928 20% 2790 30% 2563 40% 2101 50% 1290"
+
+
+# Sample-specific networks
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+filename <- "ASV.txt"
+A <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+rownames(A) <- A$ID
+A$ID <- NULL
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_JaccardIndex.tsv"
+JAC <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+
+# 2nd condition: co-occurrence, i.e. both ASVs need to be present
+NW_2ndCond <- cbind(JAC[,c(1:3)], 1*((1*(A[as.character(JAC$Source),]>0) +
+                                      1*(A[as.character(JAC$Target),]>0))==2))
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_2ndCondition_BothASVPresent.txt"
+write.table(NW_2ndCond, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+
+# 3rd condition: edge appears at least 20% within region and depth
+# we take table from 2nd condition and remove edges that with Jaccard equal or below 0.2
+# MS_SRF
+i <- "MS_SRF"
+dt_temp <- NW_2ndCond[,as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])]
+hist(rowSums(dt_temp),breaks=100)
+hist(rowSums(dt_temp)/length(which(SAM$OceanRegion_Layer==i)),breaks=100)
+dt_temp[which(rowSums(dt_temp)/length(which(SAM$OceanRegion_Layer==i))<=0.2),] <- 0
+hist(rowSums(dt_temp),breaks=100)
+hist(rowSums(dt_temp)/length(which(SAM$OceanRegion_Layer==i)),breaks=100)
+
+myIDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "MES", "BAT"),sep="_"), # SPO_DCM has only one samples -> removed!
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+NW_3rdCond <- NW_2ndCond
+sum(1*(NW_3rdCond$Source==JAC$Source & NW_3rdCond$Target==JAC$Target))==dim(JAC)[1]
+for(i in myIDs)
+{
+  RegionDepth_Jaccard <- JAC[,paste(i,"J",sep="_")]
+  NW_3rdCond[which(JAC[,paste(i,"J",sep="_")]<=0.2),as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])] <- 0
+}
+
+# example
+i <- "MalaVP_DNA_D999_3m"
+SAM$OceanRegion_Layer[which(SAM$Sample==i)] # IO_SRF
+NW_2ndCond[1:50,i]
+NW_3rdCond[1:50,i]
+
+sum(NW_2ndCond[1:50,i])
+sum(NW_3rdCond[1:50,i])
+
+sum(NW_2ndCond[,i])
+sum(NW_3rdCond[,i])
+
+# Save
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_2nd_3rdCondition.txt"
+write.table(NW_3rdCond, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+ [1] 0 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ [1] 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+[1] 8
+[1] 0
+[1] 1761
+[1] 1701
+
+Save sample-specific subnetworks
+```{r}
+# all in one file
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+write.table(NW_3rdCond, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+
+# each separately (needed for network comparison)
+# path <- paste(PATH,"02_NetworkConstruction/03_SampleSpecificSubnetworks/",sep="")
+# for(i in colnames(NW_3rdCond)[-c(1:3)])
+# {
+#   filename <- paste("subNW_",i,".tsv",sep="")
+#   write.table(NW_3rdCond[which(NW_3rdCond[,i]==1),c(1:3)],paste(path,filename,sep=""),
+#               col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+#}
+```
+
+```{r}
+hist(rowSums(NW_2ndCond[,-c(1:3)]))
+```
+
+```{r}
+hist(rowSums(NW_3rdCond[,-c(1:3)]))
+```
+
+# Check sensitivity, i.e. how robust is the 20% threshold for removing edges - how much does it depend on subnetworks
+-> test on group that is best sampled (and then check for others)
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "FW_2ndCondition_BothASVPresent.txt"
+NW_2ndCond <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t")
+filename <- "FW_JaccardIndex.tsv"
+JAC <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+filename <- "ASV.txt"
+A <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+rownames(A) <- A$ID
+A$ID <- NULL
+A_presence <- 1*(A>0)
+table(SAM$OceanRegion_Layer)
+sort(table(SAM$OceanRegion_Layer))
+```
+IO_BAT  IO_DCM  IO_MES  IO_SRF  MS_BAT  MS_DCM  MS_EPI  MS_MES  MS_SRF NAO_BAT NAO_DCM NAO_EPI NAO_MES NAO_SRF NPO_BAT NPO_DCM NPO_MES NPO_SRF SAO_BAT SAO_DCM SAO_MES SAO_SRF SPO_BAT SPO_DCM SPO_MES SPO_SRF 
+      8       3       7      35      35      21      18      52      19      20       6       4      14      34      12       3       9      29      11       4       6      26       3       1       3      14 
+
+SPO_DCM  IO_DCM NPO_DCM SPO_BAT SPO_MES NAO_EPI SAO_DCM NAO_DCM SAO_MES  IO_MES  IO_BAT NPO_MES SAO_BAT NPO_BAT NAO_MES SPO_SRF  MS_EPI  MS_SRF NAO_BAT  MS_DCM SAO_SRF NPO_SRF NAO_SRF  IO_SRF  MS_BAT  MS_MES 
+      1       3       3       3       3       4       4       6       6       7       8       9      11      12      14      14      18      19      20      21      26      29      34      35      35      52 
+      
+```{r}
+sort(table(SAM$OceanRegion_Layer))
+myIDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "MES", "BAT"),sep="_"), # SPO_DCM has only one samples -> removed!
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+nreplicates <- 1000
+range_randomsamples <- seq(from=90,to=10,by=-10)
+robusttest <- data.frame(ID=rep(myIDs,each=length(range_randomsamples)*nreplicates),
+                         fractionsubsample=rep(rep(range_randomsamples,each=nreplicates),length(myIDs)),
+                         numEdges=0)
+robusttest_edgerecall <- data.frame(ID=rep(myIDs,each=length(range_randomsamples)*nreplicates),
+                         fractionsubsample=rep(rep(range_randomsamples,each=nreplicates),length(myIDs)),
+                         numEdges=0)
+
+for(i in myIDs)
+{
+  all_samples <- as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])
+  for(randnum in range_randomsamples)
+  {
+    # Determine number of samples (randnum% of original size)
+    nsize <- ceiling(length(all_samples)*randnum/100)
+    
+    # Randomly draw nsize of samples and do that nreplicates times
+    perms <- as.data.frame(replicate(nreplicates, sample(all_samples, size = nsize, replace = FALSE)))
+    if(nsize==1)
+    {
+      perms <- t(perms)
+    }
+    FW_robusttest <- NW_2ndCond[,c("Source","Target")]
+    for(c in c(1:nreplicates))
+    {
+      # Compute Jaccard index on randomized subsample
+      if(nsize>1)
+      {
+         temp_intersection <- rowSums(1*((A_presence[as.character(FW_robusttest$Source),as.character(perms[,c])]+
+                                          A_presence[as.character(FW_robusttest$Target),as.character(perms[,c])])>1), na.rm = TRUE)
+         temp_union <- rowSums(1*((A_presence[as.character(FW_robusttest$Source),as.character(perms[,c])]+
+                                   A_presence[as.character(FW_robusttest$Target),as.character(perms[,c])])>0), na.rm = TRUE)
+         FW_robusttest[,paste(i,randnum,"J",c,sep="_")] <- temp_intersection/temp_union
+         FW_robusttest[which(is.na(FW_robusttest[,paste(i,randnum,"J",c,sep="_")])),paste(i,randnum,"J",c,sep="_")] <- 0
+      }else{
+        FW_robusttest[,paste(i,randnum,"J",c,sep="_")] <- NW_2ndCond[,as.character(perms[,c])]
+      }
+    }
+    robusttest[which(robusttest$ID==i & robusttest$fractionsubsample==randnum),"numEdges"] <- colSums(1*(FW_robusttest[,-c(1,2)]>0.2), na.rm = TRUE)
+    
+    # how many edges remain
+    robusttest_edgerecall[which(robusttest$ID==i & robusttest$fractionsubsample==randnum),"numEdges"] <- colSums(1*((1*(FW_robusttest[,-c(1,2)]>0.2) +
+                                                                                                                     1*(JAC[,paste(i,"J",sep="_")]>0.2)
+                                                                                                                    )==2), na.rm=TRUE)
+  }
+}
+```
+
+SPO_DCM  IO_DCM NPO_DCM SPO_BAT SPO_MES NAO_EPI SAO_DCM NAO_DCM SAO_MES  IO_MES  IO_BAT NPO_MES SAO_BAT NPO_BAT NAO_MES SPO_SRF  MS_EPI  MS_SRF NAO_BAT  MS_DCM SAO_SRF NPO_SRF NAO_SRF  IO_SRF  MS_BAT  MS_MES 
+      1       3       3       3       3       4       4       6       6       7       8       9      11      12      14      14      18      19      20      21      26      29      34      35      35      52
+
+Save tables      
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "robusttest.1000.txt"
+write.table(robusttest, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+filename <- "robusttest_edgerecall.1000.txt"
+write.table(robusttest_edgerecall, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+
+robusttest_fraction <- robusttest
+robusttest_edgerecall_fraction <- robusttest_edgerecall
+for(i in myIDs)
+{
+  num_edges_temp <- length(which(JAC[,paste(i,"J",sep="_")]>0.2))
+  robusttest_fraction$numEdges[which(robusttest_fraction$ID==i)] <- robusttest_fraction$numEdges[which(robusttest_fraction$ID==i)]/num_edges_temp
+
+  robusttest_edgerecall_fraction$numEdges[which(robusttest_edgerecall_fraction$ID==i)] <- robusttest_edgerecall_fraction$numEdges[which(robusttest_edgerecall_fraction$ID==i)]/num_edges_temp
+}
+filename <- "robusttest_fraction.1000.txt"
+write.table(robusttest_fraction, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+filename <- "robusttest_edgerecall_fraction.1000.txt"
+write.table(robusttest_edgerecall_fraction, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
+Visualize
+---> one boxplot per % in one figure
+-------> Figures row: regions, Figures col: depth
+-> boxplot = subsamples and red dot = original sample (instead of red line)
+```{r}
+robusttest$Region <- gsub("_","",substr(robusttest$ID,1,3))
+robusttest$Depth <- gsub("O","",gsub("_","",substr(robusttest$ID,3,7)))
+robusttest_edgerecall$Region <- gsub("_","",substr(robusttest_edgerecall$ID,1,3))
+robusttest_edgerecall$Depth <- gsub("O","",gsub("_","",substr(robusttest_edgerecall$ID,3,7)))
+robusttest_fraction$Region <- gsub("_","",substr(robusttest_fraction$ID,1,3))
+robusttest_fraction$Depth <- gsub("O","",gsub("_","",substr(robusttest_fraction$ID,3,7)))
+robusttest_edgerecall_fraction$Region <- gsub("_","",substr(robusttest_edgerecall_fraction$ID,1,3))
+robusttest_edgerecall_fraction$Depth <- gsub("O","",gsub("_","",substr(robusttest_edgerecall_fraction$ID,3,7)))
+
+p <- ggplot(robusttest,
+            aes(x=gsub("0","",factor(as.character(fractionsubsample),levels=as.character(seq(10,90,5)))), y=numEdges)) + 
+            geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) +
+            stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), geom="errorbar", color="red", width=0.2) +
+            stat_summary(fun.y=mean, geom="point", color="red") +
+            theme_classic() + theme(text = element_text(size = 12)) +
+            xlab("subset size (in percentage x10 to all samples)") +
+            ylab("Number of kept edges") +
+            facet_grid(factor(Depth,level=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "Fig_Robusttest.pdf"
+ggsave(paste(path,filename,sep=""), plot = p, height = 5, width = 10) 
+
+p <- ggplot(robusttest_fraction,
+            aes(x=gsub("0","",factor(as.character(fractionsubsample),levels=as.character(seq(10,90,5)))), y=numEdges)) + 
+            geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) +
+            stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), geom="errorbar", color="red", width=0.2) +
+            stat_summary(fun.y=mean, geom="point", color="red") +
+            theme_classic() + theme(text = element_text(size = 12)) +
+            xlab("subsample size (in percentage x10 of original size)") +
+            ylab("Number of kept edges in subset / number of kept edges in all samples") +
+            facet_grid(factor(Depth,level=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+filename <- "Fig_Robusttest_fraction.pdf"
+ggsave(paste(path,filename,sep=""), plot = p, height = 5, width = 10)   
+
+p <- ggplot(robusttest_edgerecall,
+            aes(x=gsub("0","",factor(as.character(fractionsubsample),levels=as.character(seq(10,90,5)))), y=numEdges)) + 
+            geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) +
+            stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), geom="errorbar", color="red", width=0.2) +
+            stat_summary(fun.y=mean, geom="point", color="red") +
+            theme_classic() + theme(text = element_text(size = 12)) +
+            xlab("subsample size (in percentage x10 of original size)") +
+            ylab("Number of kept edges in subset and all samples") +
+            facet_grid(factor(Depth,level=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+filename <- "Fig_Robusttest_edgerecall.pdf"
+ggsave(paste(path,filename,sep=""), plot = p, height = 5, width = 10)   
+
+p <- ggplot(robusttest_edgerecall_fraction,
+            aes(x=gsub("0","",factor(as.character(fractionsubsample),levels=as.character(seq(10,90,5)))), y=numEdges)) + 
+            geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) +
+            stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), geom="errorbar", color="red", width=0.2) +
+            stat_summary(fun.y=mean, geom="point", color="red") +
+            theme_classic() + theme(text = element_text(size = 12)) +
+            xlab("subsample size (in percentage x10 of original size)") +
+            ylab("Fraction of kept edges in subset and all samples") +
+            facet_grid(factor(Depth,level=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+filename <- "Fig_Robusttest_edgerecall_fraction.pdf"
+ggsave(paste(path,filename,sep=""), plot = p, height = 5, width = 10)
+```

@@ -1,0 +1,577 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Association prevalence
+## Required Packages
+```{r, echo=FALSE}
+library(igraph)
+library(ggplot2)
+theme_set(theme_minimal())
+library(reshape)
+library(dplyr)
+library(RColorBrewer)
+library(circlize)
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+G <- graph_from_edgelist(as.matrix(NW[,c("Source","Target")]))
+vcount(G)
+ecount(G)
+```
+5448 nodes and 29118 edges
+
+## overall prevalence
+```{r}
+NW$EdgePrevalence <- rowSums(NW[,-c(1:3)], na.rm = TRUE)/dim(NW[,-c(1:3)])[2]
+hist(NW$EdgePrevalence, breaks = 100)
+```
+
+```{r}
+summary(NW$EdgePrevalence)
+```
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+0.00000 0.03023 0.04534 0.06101 0.07305 0.66499 
+
+## Prevalence within oceanic region and depth layer
+```{r}
+PREV <- NW[,c("Source","Target","EdgePrevalence")]
+IDs <- c(paste("MS",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("NAO",c("SRF", "EPI", "DCM", "MES", "BAT"),sep="_"),
+         paste("SAO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("SPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("NPO",c("SRF", "DCM", "MES", "BAT"),sep="_"),
+         paste("IO",c("SRF", "DCM", "MES", "BAT"),sep="_"))
+for(i in IDs)
+{
+  if(length(which(SAM$OceanRegion_Layer==i))>1)
+  {
+    PREV[,paste("Prevalence",i,sep="_")] <- rowSums(NW[,as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])], na.rm = TRUE)/length(which(SAM$OceanRegion_Layer==i))
+  }else{
+    PREV[,paste("Prevalence",i,sep="_")] <- NW[,as.character(SAM$Sample[which(SAM$OceanRegion_Layer==i)])]
+  }
+}
+```
+
+## Save
+```{r}
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "EdgePrevalence.tsv"
+write.table(PREV, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
+## Visualization
+```{r}
+colnames(PREV)
+p <- ggplot(PREV, aes(x=EdgePrevalence)) + geom_histogram(binwidth=0.01) +
+           ylab("Frequency") + xlab("Jaccard index (Spatial recurrence)") +
+           theme_classic() + theme(text = element_text(size = 12))
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "Prevalence_all_JaccardIndex_SpatialRecurrence.pdf"
+ggsave(paste(path,filename,sep=""), width = 8, height = 4, plot = p)
+
+dt_temp <- melt(PREV[,c(paste("Prevalence_MS", c("SRF","EPI","DCM","MES","BAT"),sep="_"),
+                        paste("Prevalence_NAO", c("SRF","EPI","DCM","MES","BAT"),sep="_"),
+                        paste("Prevalence_SAO", c("SRF","DCM","MES","BAT"),sep="_"),
+                        paste("Prevalence_SPO", c("SRF","DCM","MES","BAT"),sep="_"),
+                        paste("Prevalence_NPO", c("SRF","DCM","MES","BAT"),sep="_"),
+                        paste("Prevalence_IO", c("SRF","DCM","MES","BAT"),sep="_"))])
+dt_temp$RegionDepthLayer <- gsub("Prevalence_","",dt_temp$variable)
+unique(dt_temp$RegionDepthLayer)
+dt_temp$DepthLayer <- gsub("_","",substr(dt_temp$RegionDepthLayer,4,7))
+unique(dt_temp$DepthLayer)
+dt_temp$Region <- gsub("_","",substr(dt_temp$RegionDepthLayer,1,3))
+unique(dt_temp$Region)
+head(dt_temp)
+p <- ggplot(dt_temp, aes(x=value)) + geom_histogram(binwidth=0.05) + scale_x_continuous(breaks=seq(0,1,0.2)) +
+           ylab("Frequency") + xlab("Association prevalence (Spatial recurrence)") + 
+           theme_bw() + theme(text = element_text(size = 12)) +
+           facet_grid(factor(DepthLayer,levels=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "Prevalence_HorizontalConnectivity_JaccardIndex_SpatialRecurrence_Regions_DepthLayers.pdf"
+ggsave(paste(path,filename,sep=""), width = 10, height = 4, plot = p)
+
+dt_temp <- dt_temp[which(dt_temp$value!=0),]
+p <- ggplot(dt_temp, aes(x=value)) + geom_histogram(binwidth=0.05) + scale_x_continuous(breaks=seq(0,1,0.2)) +
+           ylab("Frequency") + xlab("Association prevalence (Spatial recurrence)") + 
+           theme_bw() + theme(text = element_text(size = 12)) +
+           facet_grid(factor(DepthLayer,levels=c("SRF","EPI","DCM","MES","BAT"))~factor(Region,levels=c("MS","NAO","SAO","SPO","NPO","IO")))
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "Prevalence_HorizontalConnectivity_JaccardIndex_SpatialRecurrence_Regions_DepthLayers_withoutZero.pdf"
+ggsave(paste(path,filename,sep=""), width = 10, height = 4, plot = p)
+```
+
+
+## Number of prevalent associations
+How many 100%?
+```{r}
+colSums(1*(PREV[,-c(1,2)]==1))
+```
+    EdgePrevalence  Prevalence_MS_SRF  Prevalence_MS_EPI  Prevalence_MS_DCM  Prevalence_MS_MES  Prevalence_MS_BAT Prevalence_NAO_SRF Prevalence_NAO_EPI Prevalence_NAO_DCM Prevalence_NAO_MES Prevalence_NAO_BAT 
+                 0                 35                 21                 18                  0                 13                  5                824                 18                  0                  0 
+Prevalence_SAO_SRF Prevalence_SAO_DCM Prevalence_SAO_MES Prevalence_SAO_BAT Prevalence_SPO_SRF Prevalence_SPO_DCM Prevalence_SPO_MES Prevalence_SPO_BAT Prevalence_NPO_SRF Prevalence_NPO_DCM Prevalence_NPO_MES 
+                 4                418                 67                 35                 40               1530                399                217                  5                557                 37 
+Prevalence_NPO_BAT  Prevalence_IO_SRF  Prevalence_IO_DCM  Prevalence_IO_MES  Prevalence_IO_BAT 
+                22                  4                942                 58                 41 
+                
+Above 70%?
+```{r}
+colSums(1*(PREV[,-c(1,2)]>0.7))
+```
+    EdgePrevalence  Prevalence_MS_SRF  Prevalence_MS_EPI  Prevalence_MS_DCM  Prevalence_MS_MES  Prevalence_MS_BAT Prevalence_NAO_SRF Prevalence_NAO_EPI Prevalence_NAO_DCM Prevalence_NAO_MES Prevalence_NAO_BAT 
+                 0                324                307                211                178                338                297               1593                212                147                 38 
+Prevalence_SAO_SRF Prevalence_SAO_DCM Prevalence_SAO_MES Prevalence_SAO_BAT Prevalence_SPO_SRF Prevalence_SPO_DCM Prevalence_SPO_MES Prevalence_SPO_BAT Prevalence_NPO_SRF Prevalence_NPO_DCM Prevalence_NPO_MES 
+               133               1258                143                120                459               1530                399                217                493                557                159 
+Prevalence_NPO_BAT  Prevalence_IO_SRF  Prevalence_IO_DCM  Prevalence_IO_MES  Prevalence_IO_BAT 
+               354                336                942                363                123 
+
+Above 0%?
+```{r}
+colSums(1*(PREV[,-c(1,2)]>0))
+```
+    EdgePrevalence  Prevalence_MS_SRF  Prevalence_MS_EPI  Prevalence_MS_DCM  Prevalence_MS_MES  Prevalence_MS_BAT Prevalence_NAO_SRF Prevalence_NAO_EPI Prevalence_NAO_DCM Prevalence_NAO_MES Prevalence_NAO_BAT 
+             28442               3263               4196               4736               7336               3694              13478               3027               3738               5689               6831 
+Prevalence_SAO_SRF Prevalence_SAO_DCM Prevalence_SAO_MES Prevalence_SAO_BAT Prevalence_SPO_SRF Prevalence_SPO_DCM Prevalence_SPO_MES Prevalence_SPO_BAT Prevalence_NPO_SRF Prevalence_NPO_DCM Prevalence_NPO_MES 
+             11026               4199               3740               3886              10420               1530               2066               3159              11919               3100               3781 
+Prevalence_NPO_BAT  Prevalence_IO_SRF  Prevalence_IO_DCM  Prevalence_IO_MES  Prevalence_IO_BAT 
+              4834              11736               3411               4344               2790  
+
+## Highly prevalent associations             
+Chord Diagram for >70% association prevalence per depth and region
+
+### Assign taxonomy
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Euk_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_PhylumDivision <- NA
+NW$Target_PhylumDivision <- NA
+NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="E")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="E")]),"Division_pr2"]
+NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="E")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="E")]),"Division_pr2"]
+unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+
+filename <- "Prok_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="P")]),"Phylum_SILVA"]
+NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="P")]),"Phylum_SILVA"]
+unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+
+# Proteobacteria
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Proteobacteria")] <- TAX[as.character(NW$Source[which(NW$Source_PhylumDivision=="Proteobacteria")]),"Class_SILVA"]
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Proteobacteria")] <- TAX[as.character(NW$Target[which(NW$Target_PhylumDivision=="Proteobacteria")]),"Class_SILVA"]
+
+# Kingdom
+filename <- "Euk_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_Kingdom <- NA
+NW$Target_Kingdom <- NA
+NW$Source_Kingdom[which(substr(NW$Source,1,1)=="E")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="E")]),"Kingdom_pr2"]
+NW$Target_Kingdom[which(substr(NW$Target,1,1)=="E")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="E")]),"Kingdom_pr2"]
+
+filename <- "Prok_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_Kingdom[which(substr(NW$Source,1,1)=="P")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="P")]),"Kingdom_SILVA"]
+NW$Target_Kingdom[which(substr(NW$Target,1,1)=="P")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="P")]),"Kingdom_SILVA"]
+unique(c(as.character(NW$Source_Kingdom), as.character(NW$Target_Kingdom)))
+
+# Nitrospinae and Nitrospirae
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Nitrospinae")] <- "NiN"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Nitrospinae")] <- "NiN"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Nitrospirae")] <- "NiR"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Nitrospirae")] <- "NiR"
+
+# Marinimicrobia_(SAR406_clade)
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Marinimicrobia_(SAR406_clade)")] <- "SAR406"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Marinimicrobia_(SAR406_clade)")] <- "SAR406"
+
+# Chlamydiae and Chloroflexi
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Chlamydiae")] <- "ChA"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Chlamydiae")] <- "ChA"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Chloroflexi")] <- "ChO"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Chloroflexi")] <- "ChO"
+
+# unclassified Bacteria
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="WPS-2")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="WPS-2")] <- "unBac"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="PAUC34f")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="PAUC34f")] <- "unBac"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="AncK6")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="AncK6")] <- "unBac"
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision))&NW$Source_Kingdom=="Bacteria")] <- "unBac"
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision))&NW$Target_Kingdom=="Bacteria")] <- "unBac"
+
+# unclassified Eukaryota
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Eukaryota_XX")] <- "unEuk"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Eukaryota_XX")] <- "unEuk"
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Eukaryota")] <- "unEuk"
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Eukaryota")] <- "unEuk"
+
+# unclassified Arch?
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision))&NW$Source_Kingdom=="Archaea")]
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision))&NW$Target_Kingdom=="Archaea")]
+
+# any NA left?
+NW[which(is.na(NW$Source_Kingdom)),"Source_Kingdom"] <- substr(NW[which(is.na(NW$Source_Kingdom)),"Source"],1,3)
+NW[which(is.na(NW$Target_Kingdom)),"Target_Kingdom"] <- substr(NW[which(is.na(NW$Target_Kingdom)),"Target"],1,3)
+NW[which(NW$Source_Kingdom=="Euk"),"Source_Kingdom"] <- "Eukaryota"
+NW[which(NW$Target_Kingdom=="Euk"),"Target_Kingdom"] <- "Eukaryota"
+NW[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Eukaryota"),"Source_PhylumDivision"] <- "unEuk"
+NW[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Eukaryota"),"Target_PhylumDivision"] <- "unEuk"
+NW[which(NW$Source_Kingdom=="Pro"),"Source_Kingdom"] <- "Prokaryota"
+NW[which(NW$Target_Kingdom=="Pro"),"Target_Kingdom"] <- "Prokaryota"
+NW[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Prokaryota"),"Source_PhylumDivision"] <- "unProk"
+NW[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Prokaryota"),"Target_PhylumDivision"] <- "unProk"
+NW[which(is.na(NW$Source_PhylumDivision)),]
+NW[which(is.na(NW$Source_PhylumDivision)),]
+
+# IDs
+PhylumDivision_IDs <- unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+PhylumDivision_IDs <- c(sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P" & NW$Source_Kingdom=="Archaea")],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P" & NW$Target_Kingdom=="Archaea")]))),
+                             sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P" & (NW$Source_Kingdom=="Bacteria" & NW$Source_PhylumDivision!="unBac"))],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P" & (NW$Target_Kingdom=="Bacteria" & NW$Target_PhylumDivision!="unBac"))]))),
+                             sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="E" & NW$Source_PhylumDivision!="unEuk")],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="E" & NW$Target_PhylumDivision!="unEuk")]))),
+                             "unBac", "unEuk", "unProk")
+PhylumDivision_IDs
+my_grid_col <- data.frame(color= c(colorRampPalette(brewer.pal(5, "Reds")[-1])(4)[c(2,4,1,3)],
+                                   c(colorRampPalette(brewer.pal(9,"YlGnBu")[-1])(13),colorRampPalette(brewer.pal(9,"YlGn")[-1])(12))[rev(c(1,25,2,24,3,23,4,22,5,21,6,20,7,19,8,18,9,17,10,16,11,15,12,14,13))],
+                                   c(colorRampPalette(brewer.pal(9,"RdPu")[-1])(9),colorRampPalette(brewer.pal(9,"Purples")[-1])(9))[c(18,1,17,2,16,3,15,4,14,5,13,6,12,7,11,8,10,9)],
+                                   "grey","grey","grey"))
+
+rownames(my_grid_col) <- PhylumDivision_IDs
+my_grid_col <- t(my_grid_col)
+
+barplot(rep(10,50), col = my_grid_col)
+t(my_grid_col)
+```
+3 <- grey
+Arch <- 4
+Bac <- 25
+Euk <- 18
+ARC                    color
+Crenarchaeota       "#FB6A4A"
+Euryarchaeota       "#A50F15"
+Nanoarchaeaeota     "#FCAE91"
+Thaumarchaeota      "#DE2D26"
+
+BAC                    color
+Acidobacteria       "#081D58"
+Actinobacteria      "#F7FCB9"
+Alphaproteobacteria "#182A7B"
+Bacteroidetes       "#E3F4AB"
+Calditrichaeota     "#243B97"
+ChA                 "#CDEA9D"
+ChO                 "#2253A3"
+Cyanobacteria       "#B1DE8F"
+Dadabacteria        "#206EB0"
+Deinococcus-Thermus "#90D082"
+Deltaproteobacteria "#1D8CBE"
+Firmicutes          "#6DC173"
+Gammaproteobacteria "#2EA3C2"
+Gemmatimonadetes    "#4BAF62"
+Hydrogenedentes     "#46B7C3"
+Kiritimatiellaeota  "#339951"
+Lentisphaerae       "#6AC5BE"
+Margulisbacteria    "#1F8141"
+NiN                 "#91D4B9"
+NiR                 "#096F3A"
+Planctomycetes      "#BBE4B5"
+SAR406              "#005B31"
+Schekmanbacteria    "#D6EFB2"
+Spirochaetes        "#004529"
+Verrucomicrobia     "#EDF8B1"
+
+EUK                    color
+Apicomplexa         "#3F007D"
+Apusomonadidae      "#FDE0DD"
+Centroheliozoa      "#51228C"
+Cercozoa            "#FCC8C3"
+Chlorophyta         "#64469D"
+Choanoflagellida    "#FAA8B7"
+Ciliophora          "#776CB1"
+Cryptophyta         "#F87CA8"
+Dinoflagellata      "#8F8BC1"
+Fungi               "#EA4D9B"
+Hilomonadea         "#A9A7CF"
+Katablepharidophyta "#CB208D"
+Mesomycetozoa       "#C3C4DF"
+Ochrophyta          "#A0017C"
+Picozoa             "#DCDCEC"
+Radiolaria          "#730075"
+Stramenopiles_X     "#EFEDF5"
+Telonemia           "#49006A"
+
+unBac               "grey"   
+unEuk               "grey"   
+unProk              "grey"
+
+```{r}
+PhylumDivision_IDs
+```
+ [1] "Crenarchaeota"       "Euryarchaeota"       "Nanoarchaeaeota"     "Thaumarchaeota"      "Acidobacteria"       "Actinobacteria"      "Alphaproteobacteria" "Bacteroidetes"       "Calditrichaeota"    
+[10] "ChA"                 "ChO"                 "Cyanobacteria"       "Dadabacteria"        "Deinococcus-Thermus" "Deltaproteobacteria" "Firmicutes"          "Gammaproteobacteria" "Gemmatimonadetes"   
+[19] "Hydrogenedentes"     "Kiritimatiellaeota"  "Lentisphaerae"       "Margulisbacteria"    "NiN"                 "NiR"                 "Planctomycetes"      "SAR406"              "Schekmanbacteria"   
+[28] "Spirochaetes"        "Verrucomicrobia"     "Apicomplexa"         "Apusomonadidae"      "Centroheliozoa"      "Cercozoa"            "Chlorophyta"         "Choanoflagellida"    "Ciliophora"         
+[37] "Cryptophyta"         "Dinoflagellata"      "Fungi"               "Hilomonadea"         "Katablepharidophyta" "Mesomycetozoa"       "Ochrophyta"          "Picozoa"             "Radiolaria"         
+[46] "Stramenopiles_X"     "Telonemia"           "unBac"               "unEuk"               "noProk" 
+
+### Save Taxa
+```{r}
+Nodes <- NW[,c("Source","Source_Kingdom","Source_PhylumDivision")]
+colnames(Nodes) <- c("ID", "Kingdom", "PhylumDivision")
+dt_temp <- NW[,c("Target","Target_Kingdom","Target_PhylumDivision")]
+colnames(dt_temp) <- c("ID", "Kingdom", "PhylumDivision")
+Nodes <- unique(rbind(Nodes, dt_temp))
+v <- data.frame(ID = colnames(my_grid_col),
+                color = my_grid_col["color",])
+Nodes <- merge(Nodes,v,by.x="PhylumDivision",by.y="ID",all.x=TRUE,all.y=FALSE)
+
+path <- paste(PATH, "00_Tables/", sep="")
+filename <- "Nodes_Taxa.tsv"
+write.table(Nodes, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = TRUE)
+```
+
+### How many associations of a specific type?
+```{r}
+dt_temp <- NW[,c("Source_Kingdom","Target_Kingdom")]
+table(dt_temp)
+length(unique(c(as.character(NW$Source[which(NW$Source_Kingdom=="Archaea")]), as.character(as.character(NW$Source[which(NW$Source_Kingdom=="Archaea")])))))
+length(unique(c(as.character(NW$Source[which(NW$Source_Kingdom=="Bacteria")]), as.character(as.character(NW$Source[which(NW$Source_Kingdom=="Bacteria")])))))
+length(unique(c(as.character(NW$Source[which(NW$Source_Kingdom=="Eukaryota")]), as.character(as.character(NW$Source[which(NW$Source_Kingdom=="Eukaryota")])))))
+length(unique(c(as.character(NW$Source[which(NW$Source_Kingdom=="Prokaryota")]), as.character(as.character(NW$Source[which(NW$Source_Kingdom=="Prokaryota")])))))
+dt_temp <- NW[,c("Source_PhylumDivision","Target_PhylumDivision")]
+#table(dt_temp)
+```
+              Target_Kingdom
+Source_Kingdom Archaea Bacteria Eukaryota Prokaryota
+    Archaea        818     1049         0          1
+    Bacteria       722     7732         0         12
+    Eukaryota      257     1888     16636          2
+    Prokaryota       0        1         0          0
+[1] 406
+[1] 2009
+[1] 2861
+[1] 1
+
+### Visualize
+-> Circular Plot
+-> most prevalent associations (>70%) per depth layer
+```{r}
+myorderSections <- PhylumDivision_IDs
+mygridcolIDs <- PhylumDivision_IDs
+path <- paste(PATH,"04_Prevalence/",sep="")
+for(PERCENTAGE in c(0.7))
+{
+  print(paste("Percentage >", PERCENTAGE, "%"))
+  dt_temp <-  merge(NW, PREV, by=c("Source","Target"))
+  for(i in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    for(j in c("SRF","DCM","MES","BAT"))
+    {
+      # Circular Plot
+      ## Initialize the layout
+      #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+      myE <- dt_temp[which(dt_temp[,paste("Prevalence",i,j,sep="_")]>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+      print(paste(i,j,dim(myE)[1]))
+  
+      if(dim(myE)[1]>0)
+      {
+        filename <- paste("PrevalenceAbove",PERCENTAGE*100,"percent_",i,"_",j,".pdf",sep="")
+        pdf(file=paste(path,filename,sep=""), width = 3, height = 3)
+        circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+        # now, the image with rotated labels
+        chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+        circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+            xlim = get.cell.meta.data("xlim")
+            ylim = get.cell.meta.data("ylim")
+            sector.name = get.cell.meta.data("sector.index")
+            circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+            #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+        }, bg.border = NA)
+  
+        dev.off()
+        # clear
+        circos.clear()
+      }
+    }
+  }
+  
+  myorderSections <- PhylumDivision_IDs
+  mygridcolIDs <- PhylumDivision_IDs
+
+  for(i in c("MS","NAO"))
+  {
+    for(j in c("EPI"))
+    {
+      # Circular Plot
+      ## Initialize the layout
+      #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+      myE <- dt_temp[which(dt_temp[,paste("Prevalence",i,j,sep="_")]>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+      print(paste(i,j,dim(myE)[1]))
+  
+      if(dim(myE)[1]>0)
+      {
+        filename <- paste("PrevalenceAbove",PERCENTAGE*100,"percent_",i,"_",j,".pdf",sep="")
+        pdf(file=paste(path,filename,sep=""), width = 3, height = 3)
+        circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+        # now, the image with rotated labels
+        chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+        circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+            xlim = get.cell.meta.data("xlim")
+            ylim = get.cell.meta.data("ylim")
+            sector.name = get.cell.meta.data("sector.index")
+            circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+            #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+        }, bg.border = NA)
+  
+        dev.off()
+        # clear
+        circos.clear()
+      }
+    }
+  }
+}
+```
+"Percentage > 0.7 %"
+[1] "MS SRF 324"
+[1] "MS EPI 307"
+[1] "MS DCM 211"
+[1] "MS MES 178"
+[1] "MS BAT 338"
+
+[1] "NAO SRF 297"
+[1] "NAO EPI 1593"
+[1] "NAO DCM 212"
+[1] "NAO MES 147"
+[1] "NAO BAT 38"
+
+[1] "SAO SRF 133"
+[1] "SAO DCM 1258"
+[1] "SAO MES 143"
+[1] "SAO BAT 120"
+
+[1] "SPO SRF 459"
+[1] "SPO DCM 1530"
+[1] "SPO MES 399"
+[1] "SPO BAT 217"
+
+[1] "NPO SRF 493"
+[1] "NPO DCM 557"
+[1] "NPO MES 159"
+[1] "NPO BAT 354"
+
+[1] "IO SRF 336"
+[1] "IO DCM 942"
+[1] "IO MES 363"
+[1] "IO BAT 123"
+
+Check NAO: Malaspina vs Hotmix
+```{r}
+for(i in c("NAO"))
+{
+  for(j in c("SRF","EPI","DCM","MES","BAT"))
+  {
+    # Circular Plot
+    ## Initialize the layout
+    #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+    # Hotmix
+    mydt_temp <- dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==i & SAM$layer==j)])]
+    mydt_temp <- mydt_temp[,which(substr(colnames(mydt_temp),1,1)=="H")]
+    prev_temp <- rowSums(mydt_temp)/dim(mydt_temp)[2]
+    myE <- dt_temp[which(prev_temp>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+    print(paste("Hotmix:",i,j,dim(myE)[1],dim(mydt_temp)[2]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste("Hotmix_PrevalenceAbove",PERCENTAGE*100,"percent_",i,"_",j,".pdf",sep="")
+      pdf(file=paste(path,filename,sep=""), width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+    
+    # Malaspina
+    mydt_temp <- dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==i & SAM$layer==j)])]
+    mydt_temp <- mydt_temp[,which(substr(colnames(mydt_temp),1,1)=="M")]
+    prev_temp <- rowSums(mydt_temp)/dim(mydt_temp)[2]
+    myE <- dt_temp[which(prev_temp>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+    print(paste("Malaspina:",i,j,dim(myE)[1],dim(mydt_temp)[2]))
+  
+    if(dim(myE)[1]>0)
+    {
+      filename <- paste("Malaspina_PrevalenceAbove",PERCENTAGE*100,"percent_",i,"_",j,".pdf",sep="")
+      pdf(file=paste(path,filename,sep=""), width = 3, height = 3)
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 0.5)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+  
+      dev.off()
+      # clear
+      circos.clear()
+    }
+  }
+}
+```
+NAO
+[1] "NAO SRF 297 34"
+[1] "NAO EPI 1593 4"
+[1] "NAO DCM 212 6"
+[1] "NAO MES 147 14"
+[1] "NAO BAT 38 20"
+
+Hotmix:
+[1] "Hotmix: NAO SRF 1018 4"
+[1] "Hotmix: NAO EPI 1593 4"
+[1] "Hotmix: NAO DCM 845 4"
+[1] "Hotmix: NAO MES 314 9"
+[1] "Hotmix: NAO BAT 82 13"
+
+Malaspina:
+[1] "Malaspina: NAO SRF 427 30"
+[1] "Malaspina: NAO EPI 0 0"
+[1] "Malaspina: NAO DCM 32 2"
+[1] "Malaspina: NAO MES 209 5"
+[1] "Malaspina: NAO BAT 125 7"

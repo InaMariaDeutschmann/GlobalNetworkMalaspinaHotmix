@@ -1,0 +1,256 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Set Up
+## Required Packages
+```{r, eval = FALSE}
+library(dplyr)         # mutate_at
+library(Matrix)
+library("vegan")
+library(tidyverse)
+library(compositions)  # clr-transform
+```
+
+## Parameter
+```{r, eval = FALSE}
+THRESHOLD_abundancesum <- 100   # ASVs abundance sum over all stations has to be above 100
+THRESHOLD_presence <- 0.05      # ASVs have to be present in more than 5% of the stations -> 397 stations --> 19.85 -> 20 stations
+pseudo_count <- 1               # pseudocount that is added before clr transformation
+PATH <- "/GlobalNetworkMalaspinaHotmix/"
+```
+
+## Read in files
+```{r, eval = FALSE}
+# Read in ASV files
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Euk.txt"
+Euk <- read.csv(paste(path,filename,sep=""), sep = "\t", header = TRUE)
+filename <- "Prok.txt"
+Prok <- read.csv(paste(path,filename,sep=""), sep = "\t", header = TRUE)
+
+# Set rownames
+rownames(Euk) <- Euk$ID
+Euk$ID <- NULL
+rownames(Prok) <- Prok$ID
+Prok$ID <- NULL
+
+# ENV
+filename <- "ENV.txt"
+ENV <- read.csv(paste(path,filename,sep=""), sep = "\t", dec = ".", header = TRUE)
+```
+
+## Check stations
+Eukaryotic table and Prokaryotic table do not have the same stations! Thus, we have to find the stations that are present in both.
+```{r, eval = FALSE}
+E_stations <- colnames(Euk)
+P_stations <- colnames(Prok)
+I_stations <- intersect(E_stations, P_stations)
+setdiff(E_stations, P_stations)
+setdiff(P_stations, E_stations)
+Euk_intersection <- Euk[,sort(I_stations)]
+Prok_intersection <- Prok[,sort(I_stations)]
+```
+- Euk and Prok have 397 stations in common
+-> 11 stations in Euk but not in Prok:
+"MalaSurf_MD2695_3m" "MalaSurf_MD2926_3m" "MalaDeep_ST17_3943m" "MalaDeep_ST20_3942m" "MalaDeep_ST43_4000m" "MalaDeep_ST50_4000m" "MalaDeep_ST53_3500m" "MalaDeep_ST62_2400m" "MalaDeep_ST65_4000m" "MalaDeep_ST81_3500m" "MalaDeep_ST91_4000m"
+-> 23 stations in Prok, but not in Euk:
+"MalaVP_DNA_D2217_2800m" "MalaVP_DNA_D2799_1000m" "MalaVP_DNA_D2801_900m"  "MalaVP_DNA_D2805_150m"  "MalaVP_DNA_D2807_3m"    "MalaVP_DNA_D68_4000m"   "MalaVP_DNA_D72_1250m"  "MalaVP_DNA_D74_970m"
+"MalaDeep_ST144_4000m"   "MalaDeep_ST32_3200m"    "MalaDeep_ST35_3650m"    "MalaDeep_ST67_4000m"    "MalaDeep_ST74_4000m"    "MalaDeep_ST82_2150m" 
+"Hotmix_HM001_2230m"     "Hotmix_HM009_1500m"     "Hotmix_HM016_50m"       "Hotmix_HM017_3m"        "Hotmix_HM026_2752m"     "Hotmix_HM032_500m"      "Hotmix_HM041_200m"     "Hotmix_HM082_500m"      "Hotmix_HM099_50m"
+
+Now the stations of the two tables are in the same order!
+```{r, eval = FALSE}
+sum(1*(colnames(Euk_intersection)==colnames(Prok_intersection)))==dim(Euk_intersection)[2]
+```
+
+# ENV table
+## Reduce table to match intersection of Euk and Prok table
+```{r, eval = FALSE}
+rownames(ENV) <- ENV$ID
+ENV_intersection <- ENV[colnames(Euk_intersection),]
+```
+
+## Missing Values
+```{r}
+t1 <- colSums(1*(is.na(ENV_intersection)))
+t1 <- t1[which(t1>0)]
+sort(t1)
+sort(t1)/dim(ENV_intersection)[1]*100
+```
+There are numerous stations with at least one missing value:
+ENV: number of missing values
+Temperature                   2  (0.5037783%)
+Salinity                      2  (0.5037783%)
+Fluorescence                  3  (0.7556675%)
+NO3_cruise_and_WOA13         36  (9.0680101%)
+SiO4cruise_and_SiO4_WOA13    37  (9.3198992%)
+PO4_cruise_and_PO4_WOA13     38  (9.5717884%)
+Chlorophyll                  82 (20.6549118%)
+NO2                         288 (72.5440806%)
+- While most stations contain environmental information for Temperature, Salinity, and Flourescence (below 1% of missing values)
+- below 10% no NO3, PO4, Si04,
+- over 20% no Chlorophyll values,
+- over 72% do not contain NO2 values
+- all stations contain depth information
+
+---> Instead of using FlashWeave with metadata, we go for EnDED - so all station can be kept
+
+## Change format
+```{r, eval = FALSE}
+ENV_intersection <- t(ENV_intersection)
+colnames(ENV_intersection) <- ENV_intersection[1,]
+ENV_intersection <- ENV_intersection[-1,]
+ENV_intersection <- ENV_intersection[,sort(colnames(ENV_intersection))]
+```
+
+## ENV colnames should agree with Euk and Prok
+```{r, eval = FALSE}
+sum(1*(colnames(ENV_intersection) == colnames(Euk_intersection)))==dim(ENV_intersection)[2]
+sum(1*(colnames(ENV_intersection) == colnames(Prok_intersection)))==dim(ENV_intersection)[2]
+```
+Yes, they do!
+
+## Plot environmental values
+```{r}
+BREAKS <- 100
+hist(as.numeric(ENV_intersection["Depth",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["Temperature",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["Salinity",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["Fluorescence",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["NO3_cruise_and_WOA13",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["PO4_cruise_and_PO4_WOA13",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["SiO4cruise_and_SiO4_WOA13",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["Chlorophyll",]), breaks = BREAKS)
+hist(as.numeric(ENV_intersection["NO2",]), breaks = BREAKS)
+```
+
+# Filter datasets
+## Eukaryotes
+-> MalaDeep Euk has another filter size than other datasets
+-> however, prevalence is 5%, i.e. 397*0.05=19.85 -> Euk has to be present in at least 20 stations
+```{r}
+length(grep("MalaDeep",colnames(Euk_intersection)))
+```
+-> MalaDeep has 13 stations
+-> Thus, Euk that may be present because of the bigger filter size and not present in other datasets, will be removed due to the presence filter
+
+Filter ASVs based on their abundance sum and presence.
+```{r, eval = FALSE}
+paste("Number of ASV in Euk_intersection: ", dim(Euk_intersection)[1], sep="")
+paste("Abundance-sum filter (", THRESHOLD_abundancesum, ") removes ", dim(Euk_intersection)[1] - length(which(rowSums(Euk_intersection)>THRESHOLD_abundancesum)),
+      " and keeps ", length(which(rowSums(Euk_intersection)>THRESHOLD_abundancesum)), " ASVs", sep="")
+paste("Prevalence filter (", THRESHOLD_presence, ") removes ", dim(Euk_intersection)[1] - length(which(rowSums(1*Euk_intersection>0) > dim(Euk_intersection)[2]*THRESHOLD_presence)),
+      " and keeps ", length(which(rowSums(1*Euk_intersection>0) > dim(Euk_intersection)[2]*THRESHOLD_presence)), " ASVs", sep="")
+paste("Both filter combined remove ", 
+      dim(Euk_intersection)[1] - length(which(rowSums(Euk_intersection)>THRESHOLD_abundancesum & rowSums(1*Euk_intersection>0)>dim(Euk_intersection)[2]*THRESHOLD_presence)),
+      " and keeps ", 
+      length(which(rowSums(Euk_intersection)>THRESHOLD_abundancesum & rowSums(1*Euk_intersection>0)>dim(Euk_intersection)[2]*THRESHOLD_presence)),
+      " ASVs", sep="")
+Euk_abund100 <- Euk_intersection[which(rowSums(Euk_intersection)>THRESHOLD_abundancesum),]
+Euk_core <- Euk_intersection[which(rowSums(Euk_intersection)>THRESHOLD_abundancesum & rowSums(1*Euk_intersection>0)>dim(Euk_intersection)[2]*THRESHOLD_presence),]
+```
+[1] "Number of ASV in Euk_intersection: 103,421"
+[1] "Abundance-sum filter (100) removes 88,328 and keeps 15,093 ASVs"
+[1] "Prevalence filter (0.05) removes 100,465 and keeps 2,956 ASVs"
+[1] "Both filter combined remove 100,499 and keeps 2,922 ASVs"
+
+## Prokaryotes
+```{r, eval = FALSE}
+paste("Number of ASV in Prok_intersection: ", dim(Prok_intersection)[1], sep="")
+paste("Abundance-sum filter (", THRESHOLD_abundancesum, ") removes ",
+      dim(Prok_intersection)[1] - length(which(rowSums(Prok_intersection)>THRESHOLD_abundancesum)),
+      " and keeps ", length(which(rowSums(Prok_intersection)>THRESHOLD_abundancesum)), " ASVs", sep="")
+paste("Prevalence filter (", THRESHOLD_presence, ") removes ",
+      dim(Prok_intersection)[1] - length(which(rowSums(1*Prok_intersection>0) > dim(Prok_intersection)[2]*THRESHOLD_presence)),
+      " and keeps ", length(which(rowSums(1*Prok_intersection>0) > dim(Prok_intersection)[2]*THRESHOLD_presence)), " ASVs", sep="")
+paste("Both filter combined remove ", 
+      dim(Prok_intersection)[1] - length(which(rowSums(Prok_intersection)>THRESHOLD_abundancesum & rowSums(1*Prok_intersection>0)>dim(Prok_intersection)[2]*THRESHOLD_presence)),
+      " and keeps ", 
+      length(which(rowSums(Prok_intersection)>THRESHOLD_abundancesum & rowSums(1*Prok_intersection>0)>dim(Prok_intersection)[2]*THRESHOLD_presence)),
+      " ASVs", sep="")
+Prok_abund100 <- Prok_intersection[which(rowSums(Prok_intersection)>THRESHOLD_abundancesum),]
+Prok_core <- Prok_intersection[which(rowSums(Prok_intersection)>THRESHOLD_abundancesum & rowSums(1*Prok_intersection>0)>dim(Prok_intersection)[2]*THRESHOLD_presence),]
+```
+[1] "Number of ASV in Prok_intersection: 50,762"
+[1] "Abundance-sum filter (100) removes 39,937 and keeps 10,825 ASVs"
+[1] "Prevalence filter (0.05) removes 48,209 and keeps 2,553 ASVs"
+[1] "Both filter combined remove 48,227 and keeps 2,535 ASVs"
+
+## Number of reads kept after filtering
+How many reads remain if abundance filter is applied?
+```{r, eval = FALSE}
+paste("Euk: The filtering meant removing ", dim(Euk_intersection)[1], " - ", dim(Euk_abund100)[1], " = ",
+      dim(Euk_intersection)[1]-dim(Euk_abund100)[1], " of the rare ASVs, which removed ",
+      sum(Euk_intersection)-sum(Euk_abund100), " reads from the total of ", sum(Euk_intersection),
+      " reads. Thus ", sum(Euk_abund100), " (", sum(Euk_abund100)/sum(Euk_intersection)*100, "%) reads for ",
+      dim(Euk_abund100)[1], " ASVs remain.", sep="")
+
+paste("Prok: The filtering meant removing ", dim(Prok_intersection)[1], " - ", dim(Prok_abund100)[1], " = ",
+      dim(Prok_intersection)[1]-dim(Prok_abund100)[1], " of the rare ASVs, which removed ",
+      sum(Prok_intersection)-sum(Prok_abund100), " reads from the total of ", sum(Prok_intersection), " reads. Thus ",
+      sum(Prok_abund100), " (", sum(Prok_abund100)/sum(Prok_intersection)*100,
+      "%) reads for ", dim(Prok_abund100)[1], " ASVs remain.", sep="")
+```
+[1] "Euk: The filtering meant removing 103421 - 15093 = 88328 of the rare ASVs, which removed 898771 reads from the total of 45461199 reads. Thus 44562428 (98.0229931903028%) reads for 15093 ASVs remain."
+[1] "Prok: The filtering meant removing 50762 - 10825 = 39937 of the rare ASVs, which removed 634081 reads from the total of 31425163 reads. Thus 30791082 (97.9822507205452%) reads for 10825 ASVs remain."
+
+How many reads remain if both filter are applied?
+```{r, eval = FALSE}
+paste("The filtering meant removing ", dim(Euk_intersection)[1], " - ", dim(Euk_core)[1], " = ",
+      dim(Euk_intersection)[1]-dim(Euk_core)[1], " of the rare ASVs, which removed ",
+      sum(Euk_intersection)-sum(Euk_core), " reads from the total of ", sum(Euk_intersection), " reads. Thus ",
+      sum(Euk_core), " (", sum(Euk_core)/sum(Euk_intersection)*100, "%) reads for ",
+      dim(Euk_core)[1], " ASVs remain.", sep="")
+
+paste("The filtering meant removing ", dim(Prok_intersection)[1], " - ", dim(Prok_core)[1], " = ",
+      dim(Prok_intersection)[1]-dim(Prok_core)[1], " of the rare ASVs, which removed ",
+      sum(Prok_intersection)-sum(Prok_core), " reads from the total of ", sum(Prok_intersection), " reads. Thus ",
+      sum(Prok_core), " (", sum(Prok_core)/sum(Prok_intersection)*100, "%) reads for ",
+      dim(Prok_core)[1], " ASVs remain.", sep="")
+```
+[1] "The filtering meant removing 103421 - 2922 = 100499 of the rare ASVs, which removed 9188523 reads from the total of 45461199 reads. Thus 36272676 (79.788207961695%) reads for 2922 ASVs remain."
+[1] "The filtering meant removing 50762 - 2535 = 48227 of the rare ASVs, which removed 4774995 reads from the total of 31425163 reads. Thus 26650168 (84.8051862133539%) reads for 2535 ASVs remain."
+
+# clr-transformation
+```{r}
+# Function to compute Central log ratio transformation and return result as a vector
+my_clr <- function(x) {as.vector( clr(x))}
+
+# Add pseudo count of 0.001 and Central log ratio transformation
+Euk_clr <- dplyr::mutate_at((Euk_core + pseudo_count), colnames(Euk_core), my_clr)
+Prok_clr <- dplyr::mutate_at((Prok_core + pseudo_count), colnames(Prok_core), my_clr)
+```
+
+# merge tables
+```{r}
+ASV_abund100 <- rbind(Euk_abund100, Prok_abund100)
+ID_abund100 <- c(paste("Euk_",rownames(Euk_abund100),sep=""), paste("Prok_",rownames(Prok_abund100),sep=""))
+
+ASV <- rbind(Euk_core, Prok_core)
+ASV_clr <- rbind(Euk_clr, Prok_clr)
+ID <- c(paste("Euk_",rownames(Euk_core),sep=""), paste("Prok_",rownames(Prok_core),sep=""))
+```
+
+# Save tables
+```{r, eval = FALSE}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ASV_abund100.txt"
+write.table(cbind(ID_abund100,ASV_abund100),paste(path,filename,sep=""),sep="\t",quote=FALSE,
+            row.names=FALSE,col.names=c("ID",colnames(ASV_abund100)))
+
+filename <- "ASV.txt"
+write.table(cbind(ID,ASV),paste(path,filename,sep=""),sep="\t",quote=FALSE,
+            row.names=FALSE,col.names=c("ID",colnames(ASV)))
+
+filename <- "clr_ASV.tsv"
+write.table(cbind(ID,ASV_clr),paste(path,filename,sep=""),sep="\t",quote=FALSE,
+            row.names=FALSE,col.names=c("ID",colnames(ASV_clr)))
+
+filename <- 'ENV.txt'
+ID <- paste("ENV_", rownames(ENV_intersection), sep ="")
+write.table(cbind(ID,ENV_intersection),paste(path,filename,sep=""),sep="\t",quote=FALSE,
+            row.names=FALSE,col.names=c("ID",colnames(ENV_intersection)))
+```

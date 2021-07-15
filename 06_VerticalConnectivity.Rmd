@@ -1,0 +1,433 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Vertical Connectivity
+## Required Packages
+```{r, echo=FALSE}
+library(igraph)
+library(ggplot2)
+theme_set(theme_minimal())
+library(dplyr)
+library(RColorBrewer)
+library(alluvial)
+library(ggalluvial)
+library(reshape)
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+filename <- "Nodes_Taxa.tsv"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(TAX) <- TAX$ID
+filename <- "ASV.txt"
+Abund <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "EdgePrevalence.tsv"
+PREV <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE)
+G <- graph_from_edgelist(as.matrix(PREV[,c("Source","Target")]))
+vcount(G)
+ecount(G)
+
+path <- paste(PATH,"05_ClassifyingAssociations/",sep="")
+filename <- "AssociationClassification_AbsentPresent.tsv"
+dt_temp <- read.table(paste(path,filename,sep=""), header = TRUE)[,c("Source","Target","SRF","DCM","MES","BAT")]
+```
+5448 nodes and 29118 edges
+
+# Associations present across all layers
+- the following code generates a list of associations that appear in at least one region in each depth layer at least once
+```{r}
+dt_temp$Absent <- 0
+regionIDs <- "MS_NAO_SAO_SPO_NPO_IO"
+for(i in c("SRF","DCM","MES","BAT"))
+{
+  dt_temp$Absent[which(dt_temp[,i]=="Absent")] <- dt_temp$Absent[which(dt_temp[,i]=="Absent")] + 1
+}
+dt_temp <- dt_temp[which(dt_temp$Absent==0),]
+dt_temp <- merge(dt_temp, PREV, by=c("Source","Target"), all.x=TRUE, all.y=FALSE)
+
+dt_temp$AllLayers <- 0
+for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+{
+  dt_temp[,paste(j,"allLayers",sep="_")] <- 0
+  for(i in c("SRF","DCM","MES","BAT"))
+  {
+    dt_temp[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0),paste(j,"allLayers",sep="_")] <- dt_temp[which(dt_temp[,paste("Prevalence",j,i,sep="_")]>0),paste(j,"allLayers",sep="_")] + 1
+  }
+  dt_temp$AllLayers[which(dt_temp[,paste(j,"allLayers",sep="_")]==4)] <- dt_temp$AllLayers[which(dt_temp[,paste(j,"allLayers",sep="_")]==4)] + 1
+}
+dt_temp <- dt_temp[which(dt_temp$AllLayers>0),]
+hist(dt_temp$AllLayers)
+table(dt_temp$AllLayers)
+
+dt_temp$Type <- paste(substr(dt_temp$Source,1,3), substr(dt_temp$Target,1,3), sep="_")
+dt_temp$Type[which(dt_temp$Type=="Prok_Euk")] <- "Euk_Prok"
+table(dt_temp$Type)
+
+dt_temp <- merge(dt_temp, TAX[,c("ID","PhylumDivision")], by.x="Source", by.y="ID", all.x=TRUE, all.y=FALSE)
+colnames(dt_temp)[which(colnames(dt_temp)=="PhylumDivision")] <- "Source_PhylumDivision"
+dt_temp <- merge(dt_temp, TAX[,c("ID","PhylumDivision")], by.x="Target", by.y="ID", all.x=TRUE, all.y=FALSE)
+colnames(dt_temp)[which(colnames(dt_temp)=="PhylumDivision")] <- "Target_PhylumDivision"
+taxa <- as.data.frame(table(dt_temp[,c("Source_PhylumDivision","Target_PhylumDivision")]))
+taxa <- taxa[which(taxa$Freq>0),]
+
+path <- paste(PATH,"06_VerticalConnectivity/",sep="")
+filename <- "AllLayersAssociations.txt" 
+write.table(dt_temp, paste(path,filename,sep=""),col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+```
+Euk_Euk Euk_Pro Pro_Pro 
+    119      13     327 
+
+# Vertical connectivity of associations
+## generating table
+- colums = regions (MS, NAO, SAO, SPO, NPO, IO)
+- rows = taxa (Arch, Bac, Euk + AA, AB, AE, BB, BE, EE)
+```{r}
+dt_Vis <- data.frame(Source=character(),
+                      Target=character(),
+                      ID=character(),
+                      Box=character(),
+                      FirstDetected=character(),
+                      Region=character(),
+                      Layer=character(),
+                      stringsAsFactors = FALSE)
+
+dt_template <- data.frame(Source=as.character(NW$Source),
+                          Target=as.character(NW$Target),
+                          ID=paste(substr(as.character(TAX$Kingdom[NW$Source]),1,3), substr(as.character(TAX$Kingdom[NW$Target]),1,3), sep="_"),
+                          Box=rep("A",dim(NW)[1]),
+                          FirstDetected=NA,
+                          #Region=rep(REGION,dim(NW)[1]),
+                          #Layer=rep("to add",dim(NW)[1]),
+                          stringsAsFactors = FALSE)
+dt_template$ID[which(dt_template$ID=="Bac_Arc")] <- "Arc_Bac"
+dt_template$ID[which(dt_template$ID=="Euk_Arc")] <- "Arc_Euk"
+dt_template$ID[which(dt_template$ID=="Euk_Bac")] <- "Bac_Euk"
+    
+for(REGION in c("MS","NAO","SAO","NPO","IO"))
+{
+    # Surface
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "SRF"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "S"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # DCM
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "DCM"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0)] <- "D"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0)] <- "DCM"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # Mesopelagic
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "MES"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "D"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "M"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0)] <- "DCM"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "MES"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # Bathypelagic
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "BAT"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "D"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "M"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "B"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))>0)] <- "DCM"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "MES"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "BAT"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+}
+
+REGION <- "SPO"
+    # Surface
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "SRF"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "S"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # DCM
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "DCM"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0)] <- "D"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0)] <- "DCM"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # Mesopelagic
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "MES"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "D"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "M"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0)] <- "DCM"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "MES"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+    
+    # Bathypelagic
+    dt_temp <- dt_template
+    dt_temp$Region <- REGION
+    dt_temp$Layer <- "BAT"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "S"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "D"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "M"
+    dt_temp$Box[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                              1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))==0 &
+                      rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "B"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))>0)] <- "SRF"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)>0)] <- "DCM"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))>0)] <- "MES"
+    dt_temp$FirstDetected[which(rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])]>0))==0 &
+                                        1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])]>0))==0 &
+                                rowSums(1*(NW[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])]>0))>0)] <- "BAT"
+    dt_Vis <- rbind(dt_Vis, dt_temp[which(!is.na(dt_temp$FirstDetected)),])
+```
+
+## Visualization
+```{r}
+mycolor_id <- c(SRF="yellow",
+                DCM="orange",
+                MES="red",
+                BAT="black",
+                S="yellow",
+                D="orange",
+                M="red",
+                B="black",
+                A="white")
+
+dt_Vis$edge <- paste(dt_Vis$Source, dt_Vis$Target, sep=";")
+dt_Vis$Freq <- 1
+head(dt_Vis)
+
+p <- ggplot(data = dt_Vis,
+            aes(x = factor(Layer, levels=c("BAT","MES","DCM","SRF")), stratum = factor(Box, levels=rev(c("S","D","M","B","A"))), alluvium = edge,
+                y = Freq, label = Box)) +
+            geom_alluvium(aes(color=FirstDetected), alpha=0.6) +
+            geom_stratum(aes(fill=Box), width = 0.35, alpha = 0.6) +
+            scale_fill_manual(values=mycolor_id) +
+            scale_color_manual(values=mycolor_id) +
+            #geom_text(stat = "stratum") +
+            xlab("Depth layer") + ylab("Frequency") +
+            theme_classic() +
+            theme(text = element_text(size=10), legend.position = "bottom", legend.title = element_blank(),
+                  axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                  axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+            coord_flip() +
+            facet_grid(factor(Region, levels=c("MS","NAO","SAO","SPO","NPO","IO"))~ID, scales = "free")
+path <- paste(PATH,"06_VerticalConnectivity/",sep="")
+filename <- paste(path,"AlluvialPlot.png")
+ggsave(filename, plot = p, height = 8, width = 15)
+
+# How many are new?
+for(i in unique(dt_Vis$Region))
+{
+  for(j in unique(dt_Vis$Layer))
+  {
+    print(paste(i,j,sep="_"))
+    print(table(dt_Vis$Box[which(dt_Vis$Region==i & dt_Vis$Layer==j)]))
+    print(table(dt_Vis$Box[which(dt_Vis$Region==i & dt_Vis$Layer==j)])/length(which(dt_Vis$Region==i & dt_Vis$Layer==j & dt_Vis$Box!="A"))*100)
+  }
+}
+```
+
+# Vertical connectivity of ASVs
+## generating table
+Same as above but ASVs
+```{r}
+REGIONids <- c("MS","NAO","SAO","SPO","NPO","IO")
+DEPTHids <- c("SRF","DCM","MES","BAT")
+path <- paste(PATH,"06_VerticalConnectivity/",sep="")
+for(REGION in REGIONids){
+  RLids <- c(paste(REGION, DEPTHids, sep = "_"))
+  dt_temp <- Abund[,c("ID",as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer!="EPI")]))]
+  dt_temp <- dt_temp[which(rowSums(1*(dt_temp[,-1]>0))>0),]
+  dt_alluvial <- data.frame(ID=dt_temp[,c("ID")])
+  dt_alluvial$SRF <- "absent"
+  dt_alluvial$SRF[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0)] <- "SRF"
+  
+  dt_alluvial$DCM <- "absent"
+  if(length(which(SAM$OceanRegion==REGION & SAM$layer=="DCM"))>1){
+      dt_alluvial$DCM[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                        rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])>0)] <- "SRF"
+      dt_alluvial$DCM[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                        rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])>0)] <- "DCM"
+  }else{
+      dt_alluvial$DCM[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)] <- "SRF"
+      dt_alluvial$DCM[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0)] <- "DCM"
+  }
+  
+  dt_alluvial$MES <- "absent"
+  if(length(which(SAM$OceanRegion==REGION & SAM$layer=="DCM"))>1){
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "SRF"
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "DCM"
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "MES"
+  }else{
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "SRF"
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "DCM"
+      dt_alluvial$MES[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0)] <- "MES"
+  }
+  
+  dt_alluvial$BAT <- "absent"
+  if(length(which(SAM$OceanRegion==REGION & SAM$layer=="DCM"))>1){
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "SRF"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "DCM"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "MES"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])])==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "BAT"
+  }else{
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])>0 &
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "SRF"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "DCM"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])>0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "MES"
+      dt_alluvial$BAT[which(rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="SRF")])])==0 &
+                                    dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="DCM")])]==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="MES")])])==0 & 
+                            rowSums(dt_temp[,as.character(SAM$Sample[which(SAM$OceanRegion==REGION & SAM$layer=="BAT")])])>0)] <- "BAT"
+  }
+
+  dt_alluvial$Freq <- 1
+  dt_aggregate <- aggregate( Freq ~ SRF + DCM + MES + BAT, data=dt_alluvial, sum)
+  
+  alluvial(dt_aggregate[,1:4], freq=dt_aggregate$Freq, border=NA, cex=1,
+           blocks = TRUE,
+           col=ifelse((substr(dt_aggregate$SRF,1,3) == "SRF"), "yellow", 
+                      ifelse((substr(dt_aggregate$SRF,1,3) == "abs" & substr(dt_aggregate$DCM,1,3) == "DCM"), "orange",
+                             ifelse((substr(dt_aggregate$SRF,1,3) == "abs" & substr(dt_aggregate$DCM,1,3) == "abs" & (substr(dt_aggregate$MES,1,3) == "MES")), "red",
+                                    ifelse((substr(dt_aggregate$SRF,1,3) == "abs" & substr(dt_aggregate$DCM,1,3) == "abs" & substr(dt_aggregate$MES,1,3) == "abs" & substr(dt_aggregate$BAT,1,3) == "BAT"), "black", "gray")))))
+  
+  idorder <- c("absent", rev(DEPTHids))
+  dt_aggregate$layerID <- "absent"
+  dt_aggregate$layerID[which(dt_aggregate$SRF=="SRF")] <- "SRF"
+  dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="DCM")] <- "DCM"
+  dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="absent" & dt_aggregate$MES=="MES")] <- "MES"
+  dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="absent" & dt_aggregate$MES=="absent" & dt_aggregate$BAT=="BAT")] <- "BAT"
+  mycolor_id <- c(SRF="yellow",
+                DCM="orange",
+                MES="red",
+                BAT="black",
+                absent="light grey")
+
+  p <- ggplot(data = dt_aggregate,aes(axis1 = factor(BAT, levels = c("absent",rev(DEPTHids))),
+                                    axis2 = factor(MES, levels = c("absent",rev(DEPTHids))),
+                                    axis3 = factor(DCM, levels = c("absent",rev(DEPTHids))),
+                                    axis4 = factor(SRF, levels = c("absent",rev(DEPTHids))),
+                                    y = Freq)) +
+  scale_x_discrete(limits = rev(c("SRF", "DCM",  "MES", "BAT")), expand = c(0, 0)) +
+  xlab("") + ylab(REGION) +
+  geom_alluvium(aes(fill = factor(layerID, levels=idorder))) +
+  geom_stratum(width=0.1, color="black") +
+  geom_text(stat = "stratum", aes(label = substr(after_stat(stratum),1,1))) +
+  theme_classic() + theme(text = element_text(size=12), legend.position = "none",
+                          axis.line.y = element_blank(), axis.ticks.y = element_blank(), axis.ticks.x = element_line(color="black"),
+                          axis.title.y = element_text(color="black"), axis.title.x = element_text(color="black")) +
+  scale_fill_manual(values=mycolor_id) +
+  coord_flip()
+
+  filename <- paste(path,"Alluvial_ASV_", REGION,".pdf",sep="")
+  ggsave(filename, plot = p, width = 5, height = 5)
+}
+```
