@@ -1,0 +1,719 @@
+---
+title: "Global Ocean"
+author: "Ina Maria Deutschmann"
+date: "15. July 2021"
+---
+
+# Network similarity network
+## Required Packages
+```{r, echo = FALSE}
+library(igraph)
+library(ggplot2)
+library("ggpubr")
+library(ggridges)
+theme_set(theme_minimal())
+library(reshape)
+library(dplyr)
+library(factoextra)
+library(RColorBrewer)
+library(circlize)
+library(dendextend)
+require(maps)
+require(viridis)
+```
+
+## parameter and data
+```{r}
+PATH <- "GlobalNetworkMalaspinaHotmix/"
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+path <- paste(PATH,"07_NetworkSimilarity/Graphlet/",sep="")
+filename <- "nw_comparison_graphlet_edgelist.tsv"
+NSN <- read.table(paste(path,filename,sep=""), header = TRUE)
+filename <- "nw_comparison_graphlet_matrix.txt"
+gcd_matrix <- read.table(paste(path,filename,sep=""), header = TRUE, stringsAsFactors = FALSE, dec = ".")
+```
+5448 nodes and 29118 edges
+
+## determine cluster of similar subnetworks
+- reduced dimensionality to 10 dimension with umap and determined clusters with hdbscan, also reduced dimensions to 2 for visualization purposes
+- this was done in python
+- see "Notebook_Umap_HDBScan.ipynb" in folder "08_NetworkCluster"
+
+## Analyze and visualize clusters
+```{r}
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+filename <- "HDBSCAN_minSamples3_minClusterSize5.tsv"
+CLU <- read.table(paste(path,filename,sep=""), header = TRUE)
+myPalette = c(SRF="yellow", EPI="orange", DCM="red", MES="royalblue", BAT="black")
+p <- ggplot(CLU, aes(x,y,color=layer)) + geom_point(size=1, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none") + scale_color_manual(values=myPalette)
+filename <- "Scatterplot_HDBSCAN_minSamples3_minClusterSize_Layers.pdf"
+ggsave(paste(path,filename,sep=""), plot=p, width = 4, height = 4)
+```
+
+```{r}
+ggplot(CLU, aes(x,y,color=as.character(cluster), shape=layer)) + geom_point()
+```
+
+```{r}
+sort(table(CLU$cluster))
+```
+
+```{r}
+  getPalette = colorRampPalette(brewer.pal(8, "Dark2"))
+  getPalette(36)
+  myPalette = c( '0'="grey",
+                 '1'="#1B9E77",  '2'="#41915F",  '3'="#678448", '4'="#8D7830", '5'="#B36B19", '6'="#D95F02", '7'="#C46225", '8'="#B16548", '9'="#9C696C", '10'="#896C8F",
+                '11'="#7570B3", '12'="#8B61AA", '13'="#A253A2", '14'="#B9459A", '15'="#D03792", '16'="#E7298A", '17'="#CD4274", '18'="#B35B5E", '19'="#997349", '20'="#7F8D33",
+                '21'="#66A61E", '22'="#7FA718", '23'="#99A812", '24'="#B2A90D", '25'="#CCAA07", '26'="#E5AA02", '27'="#D9A007", '28'="#CC950C", '29'="#BF8B12", '30'="#B28017",
+                '31'="#A6761D", '32'="#99722B", '33'="#8C6F3A", '34'="#7F6C48", '35'="#726957", '36'="#666666")
+  myPalette2 = c(SRF="yellow", EPI="orange", DCM="red", MES="royalblue", BAT="black")
+path <- paste(PATH,"08_NetworkCluster/",sep="")  
+for(i in c(5:10))
+{
+  filename <- paste("HDBSCAN_minSamples3_minClusterSize",i,".tsv", sep="")
+  CLU <- read.table(paste(path,filename,sep=""), header = TRUE)
+  CLU$cluster <- CLU$cluster + 1
+  colourCount = max(CLU$cluster)
+   
+  # Scatterplot
+  p <- ggplot(CLU, aes(x,y,color=as.character(cluster))) + geom_point(size=0.5, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette)
+  filename <- paste("Scatterplot_HDBSCAN_minSamples3_minClusterSize",i,".tsv", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 2, height = 2)
+  
+  # Scatterplot
+  p <- ggplot(CLU, aes(x,y,color=layer)) + geom_point(size=0.5, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette2)
+  filename <- paste("Scatterplot_Layer_HDBSCAN_minSamples3_minClusterSize",i,".tsv", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 2, height = 2)
+
+  # Barplot
+  dt_temp <- data.frame(ID=c(0:(colourCount)),location=-5)
+  p <- ggplot() + 
+        geom_bar(data=CLU, aes(x=cluster,fill=factor(layer, levels=c("SRF","EPI","DCM","MES","BAT"))), alpha = 0.6) +
+        scale_fill_manual(values=myPalette2) +
+        geom_point(data=dt_temp, aes(x=ID,y=location,color=as.character(ID)), size = 1.5) +
+        scale_color_manual(values = myPalette) +
+        ylim(-5,65) + xlim(-1,37) +
+        theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8))
+  filename <- paste("Barplot_HDBSCAN_minSamples3_minClusterSize",i,".tsv", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 3, height = 2)
+  
+  print(paste(i,":",paste(table(CLU$cluster),collapse="; ")))
+}
+```
+[1] "5 : 24; 5; 10; 8; 8; 12; 8; 15; 10; 11; 12; 6; 6; 11; 16; 8; 7; 9; 8; 7; 15; 8; 17; 8; 13; 14; 7; 11; 11; 12; 6; 28; 6; 6; 14; 13; 7"
+[1] "6 : 19; 35; 10; 8; 8; 12; 8; 29; 10; 11; 11; 16; 8; 7; 9; 15; 8; 17; 8; 13; 14; 7; 11; 11; 12; 6; 28; 6; 6; 20; 14"
+[1] "7 : 26; 35; 62; 10; 8; 8; 12; 29; 10; 11; 16; 8; 15; 35; 8; 17; 8; 13; 14; 7; 11; 20; 14"
+[1] "8 : 26; 35; 62; 10; 8; 8; 12; 29; 10; 11; 16; 8; 15; 35; 8; 17; 8; 18; 13; 14; 20; 14"
+[1] "9 : 41; 35; 18; 20; 62; 29; 10; 11; 26; 16; 15; 35; 18; 13; 14; 20; 14"
+[1] "10 : 33; 35; 18; 20; 62; 29; 10; 11; 26; 16; 35; 15; 35; 18; 20; 14"
+
+big cluster
+```{r}
+filename <- paste("HDBSCAN_minSamples3_minClusterSize",10,".tsv", sep="")
+CLU <- read.table(paste(path,filename,sep=""), header = TRUE)
+
+length(which(as.character(CLU$cluster)==rownames(sort(table(CLU_10$cluster), decreasing = TRUE))[1]))
+BigCluster <- data.frame(Sample=CLU$Sample[which(CLU$cluster==as.integer(rownames(sort(table(CLU_10$cluster), decreasing = TRUE))[1]))],
+                         x10=as.integer(rownames(sort(table(CLU_10$cluster), decreasing = TRUE))[1]))
+for(i in 9:5)
+{
+  filename <- paste("HDBSCAN_minSamples3_minClusterSize",i,".tsv", sep="")
+  CLU <- read.table(paste(path,filename, sep=""), header = TRUE)
+  BigCluster <- merge(BigCluster, CLU[,c("Sample","cluster")], by = "Sample", all.x=TRUE, all.y=FALSE)
+  colnames(BigCluster)[which(colnames(BigCluster)=="cluster")] <- paste("x",i,sep="")
+}
+BigCluster <- merge(BigCluster, CLU[,c("Sample","layer", "OceanRegion", "x", "y")], by = "Sample")
+head(BigCluster)
+for(i in 5:10)
+{
+  BigCluster[,paste("x",i,sep="")] <- BigCluster[,paste("x",i,sep="")] + 1
+  # Scatterplot
+  p <- ggplot(BigCluster, aes(x,y,color=as.character(BigCluster[,paste("x",i,sep="")]))) + geom_point(size=0.5, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette)
+  filename <- paste("BigCluster_Scatterplot_HDBSCAN_minSamples3_minClusterSize",i,".pdf", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 2, height = 2)
+  
+  # Scatterplot
+  p <- ggplot(BigCluster, aes(x,y,color=layer,shape=OceanRegion)) + geom_point(size=0.5, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette2)
+  filename <- paste("BigCluster_Scatterplot_Layer_HDBSCAN_minSamples3_minClusterSize",i,".pdf", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 2, height = 2)
+}
+```
+
+-> 5 and 6 have same splitting, 7-10 group all into one cluster
+```{r}
+i<-5
+  p <- ggplot(BigCluster, aes(x,y,color=as.character(BigCluster[,paste("x",i,sep="")]))) + geom_point(size=0.5, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette)
+  BigCluster_Scatterplot_Layer_HDBSCAN_minSamples3_minClusterSize
+  filename <- paste("BigCluster_Scatterplot_HDBSCAN_minSamples3_minClusterSize",i,".pdf", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 2, height = 2)
+  
+  # Scatterplot
+  p <- ggplot(BigCluster, aes(x,y,color=layer,shape=OceanRegion)) + geom_point(size=3, alpha=0.6) + theme(text = element_text(size = 8), legend.position = "none", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette2)
+  filename <- paste("BigCluster_Scatterplot_Layer_HDBSCAN_minSamples3_minClusterSize",i,".pdf", sep="")
+  ggsave(paste(path,filename,sep=""), plot=p, width = 4, height = 4)
+
+  table(BigCluster$x5)
+  
+ggplot(BigCluster, aes(x,y,color=layer,shape=OceanRegion)) + geom_point(size=3, alpha=0.6) + 
+        theme(text = element_text(size = 8), legend.position = "top", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette2)
+ggplot(BigCluster, aes(x,y,color=as.character(BigCluster[,paste("x",i,sep="")]))) + geom_point(size=5, alpha=0.6) + 
+        theme(text = element_text(size = 8), legend.position = "top", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette)
+myPalette3 <- myPalette
+myPalette3['28'] <- "blue"
+myPalette3['29'] <- "green"
+ggplot(BigCluster, aes(x,y,color=as.character(BigCluster[,paste("x",i,sep="")]))) + geom_point(size=5, alpha=0.6) + 
+        theme(text = element_text(size = 8), legend.position = "top", plot.caption = element_text(size=8), plot.title = element_text(size=8)) +
+        scale_color_manual(values = myPalette3)
+```
+
+# Cluster characterization
+```{r}
+path <- paste(PATH,"08_NetworkCluster/",sep="")  
+filename <- "HDBSCAN_minSamples3_minClusterSize5.tsv"
+CLU <- read.csv(paste(path,filename,sep=""), header = TRUE, sep = "\t")
+CLU$cluster <- as.character((CLU$cluster+1))
+table(CLU[,c("cluster","layer")])
+table(CLU[,c("cluster","OceanRegion_Layer")])
+dt_temp <- melt(table(CLU[,c("cluster","OceanRegion_Layer")]))
+dt_temp <- dt_temp[order(dt_temp$cluster),]
+dt_temp <- dt_temp[which(dt_temp$value>0),]
+head(dt_temp)
+```
+       layer
+cluster BAT DCM EPI MES SRF
+     0    4   3   0   7  10
+     1    1   1   1   1   1
+     10   5   1   0   6   0
+     11   1   0   0   5   0
+     12   0   0   0   5   1
+     13   1   0   1   3   6
+     14  11   1   1   1   2
+     15   0   0   0   0   8
+     16   0   0   1   1   5
+     17   3   3   1   2   0
+     18   5   0   2   0   1
+     19   0   0   1   0   6
+     2    5   2   0   2   1
+     20   2   1   0   1  11
+     21   3   1   0   2   2
+     22   6   1   0   6   4
+     23   0   0   1   1   6
+     24   2   0   1   8   2
+     25   6   2   1   1   4
+     26   0   0   1   0   6
+     27   0   0   0   0  11
+     28   3   0   3   4   1
+     29   2   2   0   2   6
+     3    5   0   0   2   1
+     30   1   1   0   1   3
+     31   6   2   3  10   7
+     32   0   0   0   0   6
+     33   0   0   0   0   6
+     34   0   0   0   0  14
+     35   3   0   1   0   9
+     36   0   0   0   0   7
+     4    1   0   1   6   0
+     5    2   0   0   8   2
+     6    2   1   2   2   1
+     7    9   0   0   4   2
+     8    0   9   0   0   1
+     9    0   7   0   0   4
+     
+     OceanRegion_Layer
+cluster IO_BAT IO_DCM IO_MES IO_SRF MS_BAT MS_DCM MS_EPI MS_MES MS_SRF NAO_BAT NAO_DCM NAO_EPI NAO_MES NAO_SRF NPO_BAT NPO_DCM NPO_MES NPO_SRF SAO_BAT SAO_DCM SAO_MES SAO_SRF SPO_BAT SPO_DCM SPO_MES SPO_SRF
+     0       0      0      2      2      1      1      0      4      1       1       2       0       0       2       1       0       1       3       1       0       0       2       0       0       0       0
+     1       0      0      0      0      1      0      1      1      0       0       1       0       0       0       0       0       0       0       0       0       0       1       0       0       0       0
+     10      1      0      1      0      0      0      0      1      0       2       1       0       1       0       1       0       2       0       1       0       1       0       0       0       0       0
+     11      1      0      1      0      0      0      0      1      0       0       0       0       0       0       0       0       1       0       0       0       2       0       0       0       0       0
+     12      0      0      0      0      0      0      0      2      0       0       0       0       3       1       0       0       0       0       0       0       0       0       0       0       0       0
+     13      0      0      0      1      1      0      1      2      1       0       0       0       1       0       0       0       0       1       0       0       0       3       0       0       0       0
+     14      0      0      0      0      0      1      1      1      1       5       0       0       0       1       3       0       0       0       2       0       0       0       1       0       0       0
+     15      0      0      0      3      0      0      0      0      0       0       0       0       0       4       0       0       0       1       0       0       0       0       0       0       0       0
+     16      0      0      0      0      0      0      1      1      4       0       0       0       0       0       0       0       0       1       0       0       0       0       0       0       0       0
+     17      0      0      0      0      3      1      1      2      0       0       1       0       0       0       0       0       0       0       0       0       0       0       0       1       0       0
+     18      0      0      0      1      3      0      2      0      0       2       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0
+     19      0      0      0      2      0      0      1      0      0       0       0       0       0       1       0       0       0       1       0       0       0       2       0       0       0       0
+     2       0      0      0      0      5      2      0      2      1       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0
+     20      1      0      1      2      0      1      0      0      0       0       0       0       0       2       1       0       0       1       0       0       0       5       0       0       0       1
+     21      1      0      0      1      0      1      0      1      0       2       0       0       0       0       0       0       0       0       0       0       1       0       0       0       0       1
+     22      1      0      0      0      1      1      0      0      0       1       0       0       1       0       0       0       2       0       3       0       1       3       0       0       2       1
+     23      0      0      0      1      0      0      1      1      2       0       0       0       0       1       0       0       0       1       0       0       0       0       0       0       0       1
+     24      0      0      1      0      0      0      1      4      2       1       0       0       3       0       1       0       0       0       0       0       0       0       0       0       0       0
+     25      0      0      0      0      1      2      1      0      2       0       0       0       1       2       3       0       0       0       2       0       0       0       0       0       0       0
+     26      0      0      0      2      0      0      1      0      0       0       0       0       0       2       0       0       0       2       0       0       0       0       0       0       0       0
+     27      0      0      0      2      0      0      0      0      0       0       0       0       0       1       0       0       0       4       0       0       0       0       0       0       0       4
+     28      0      0      0      0      3      0      0      4      1       0       0       3       0       0       0       0       0       0       0       0       0       0       0       0       0       0
+     29      0      0      0      1      2      1      0      2      1       0       1       0       0       3       0       0       0       0       0       0       0       1       0       0       0       0
+     3       0      0      0      0      5      0      0      2      1       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0
+     30      1      0      0      1      0      1      0      0      0       0       0       0       0       1       0       0       1       0       0       0       0       0       0       0       0       1
+     31      1      0      0      4      2      2      3      6      2       3       0       0       2       0       0       0       2       0       0       0       0       1       0       0       0       0
+     32      0      0      0      1      0      0      0      0      0       0       0       0       0       2       0       0       0       1       0       0       0       2       0       0       0       0
+     33      0      0      0      0      0      0      0      0      0       0       0       0       0       1       0       0       0       3       0       0       0       1       0       0       0       1
+     34      0      0      0      1      0      0      0      0      0       0       0       0       0       4       0       0       0       5       0       0       0       2       0       0       0       2
+     35      0      0      0      4      3      0      1      0      0       0       0       0       0       3       0       0       0       0       0       0       0       1       0       0       0       1
+     36      0      0      0      3      0      0      0      0      0       0       0       0       0       0       0       0       0       3       0       0       0       1       0       0       0       0
+     4       0      0      0      0      1      0      1      6      0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0       0
+     5       0      0      0      1      0      0      0      7      0       2       0       0       1       1       0       0       0       0       0       0       0       0       0       0       0       0
+     6       0      0      0      1      2      0      1      1      0       0       0       1       1       0       0       1       0       0       0       0       0       0       0       0       0       0
+     7       1      0      1      1      1      0      0      1      0       1       0       0       0       0       2       0       0       0       2       0       1       0       2       0       1       1
+     8       0      0      0      0      0      5      0      0      0       0       0       0       0       0       0       1       0       1       0       3       0       0       0       0       0       0
+     9       0      3      0      0      0      2      0      0      0       0       0       0       0       2       0       1       0       1       0       1       0       1       0       0       0       0
+
+Subnetwork cluster overview
+```{r}
+CLUoverview <- data.frame(CLU=c(0:max(as.integer(CLU$cluster))))
+```
+
+## number of samples per cluster
+```{r}
+dt_temp <- data.frame(sort(table(CLU$cluster)))
+CLUoverview <- merge(CLUoverview, dt_temp, by.x="CLU", by.y="Var1")
+colnames(CLUoverview)[2] <- "size"
+```
+1 11 12 30 32 33 16 19 26 36 15 18 21 23  3  4  6 17  2  8 13 27 28  9 10 29  5 24 35 25 34 20  7 14 22  0 31 
+ 5  6  6  6  6  6  7  7  7  7  8  8  8  8  8  8  8  9 10 10 11 11 11 11 12 12 12 13 13 14 14 15 15 16 17 24 28 
+
+```{r}
+sort(table(CLU$OceanRegion_Layer[which(CLU$cluster==0)]))
+sort(table(CLU$layer[which(CLU$cluster==0)]))
+```
+MS_BAT  MS_DCM  MS_SRF NAO_BAT NPO_BAT NPO_MES SAO_BAT  IO_MES  IO_SRF NAO_DCM NAO_SRF SAO_SRF NPO_SRF  MS_MES 
+1       1       1       1       1       1       1       2       2       2       2       2       3       4 
+
+EPI DCM BAT MES SRF 
+  0   3   4   7  10 
+
+## number and fraction of regions and depth layers
+```{r}
+  for(i in c("SRF","EPI","DCM","MES","BAT","MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    CLUoverview[,paste("frac",i,sep="_")] <- 0
+  }
+  for(i in c("SRF"))
+  {
+    for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+    {
+      CLUoverview[,paste("frac",i,j,sep="_")] <- 0
+    }
+  }
+  for(i in c("EPI"))
+  {
+    for(j in c("MS","NAO"))
+    {
+      CLUoverview[,paste("frac",i,j,sep="_")] <- 0
+    }
+  }
+  for(i in c("DCM","MES","BAT"))
+  {
+    for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+    {
+      CLUoverview[,paste("frac",i,j,sep="_")] <- 0
+    }
+  }
+  for(i in c("SRF","EPI","DCM","MES","BAT","MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    CLUoverview[,paste("num",i,sep="_")] <- 0
+  }
+  for(i in c("SRF"))
+  {
+    for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+    {
+      CLUoverview[,paste("num",i,j,sep="_")] <- 0
+    }
+  }
+  for(i in c("EPI"))
+  {
+    for(j in c("MS","NAO"))
+    {
+      CLUoverview[,paste("num",i,j,sep="_")] <- 0
+    }
+  }
+  for(i in c("DCM","MES","BAT"))
+  {
+    for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+    {
+      CLUoverview[,paste("num",i,j,sep="_")] <- 0
+    }
+  }
+for(cluster in CLUoverview$CLU)
+{
+  for(i in c("SRF","DCM","MES","BAT"))
+  {
+    for(j in c("MS","NAO","SAO","SPO","NPO","IO"))
+    {
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",i,sep="_")] <- length(which(CLU$cluster==cluster & CLU$layer==i))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",i,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$layer==i))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",j,sep="_")] <- length(which(CLU$cluster==cluster & CLU$OceanRegion==j))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",j,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$OceanRegion==j))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",i,j,sep="_")] <- length(which(CLU$cluster==cluster & CLU$layer==i & CLU$OceanRegion==j))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",i,j,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$layer==i & CLU$OceanRegion==j))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+    }
+  }
+  for(i in c("EPI"))
+  {
+    for(j in c("MS","NAO"))
+    {
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",i,sep="_")] <- length(which(CLU$cluster==cluster & CLU$layer==i))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",i,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$layer==i))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",j,sep="_")] <- length(which(CLU$cluster==cluster & CLU$OceanRegion==j))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",j,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$OceanRegion==j))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("num",i,j,sep="_")] <- length(which(CLU$cluster==cluster & CLU$layer==i & CLU$OceanRegion==j))
+      CLUoverview[which(CLUoverview$CLU==cluster),paste("frac",i,j,sep="_")] <- format(length(which(CLU$cluster==cluster & CLU$layer==i & CLU$OceanRegion==j))/CLUoverview$size[which(CLUoverview$CLU==cluster)]*100, nsmall = 2)
+    }
+  }
+}
+CLUoverview[c(14,36,17,21,24,20,27),]
+CLUoverview[c(13),]
+CLUoverview[,c("CLU","size","frac_BAT")]
+CLUoverview$frac_EPI
+clusterID <- 28
+for(clusterID in c(5:36))
+print(table(paste(CLU$OceanRegion[which(CLU$cluster==clusterID)], CLU$layer[which(CLU$cluster==clusterID)], sep="-")))
+CLUoverview[which(as.integer(CLUoverview$frac_NAO)>50),c("CLU","size","frac_NAO")]
+```
+
+# ENV
+```{r}
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "ENV.txt"
+ENV <- read.table(paste(path,filename,sep=""), header = TRUE)
+rownames(ENV) <- ENV$ID
+ENV$ID <- NULL
+ENV <- as.data.frame(t(ENV))
+ENV$ID <- rownames(ENV)
+dt <- merge(CLU, ENV, by.x="Sample", by.y="ID", all.x=TRUE, all.y=FALSE)
+ENVids <- c("ENV_Depth", "ENV_Temperature", "ENV_Salinity", "ENV_NO3_cruise_and_WOA13", "ENV_PO4_cruise_and_PO4_WOA13", "ENV_SiO4cruise_and_SiO4_WOA13", "ENV_Fluorescence")
+dt_temp <- melt(dt[,c("cluster", ENVids)])
+dt_temp <- dt_temp[which(!is.na(dt_temp$value)),]
+dt_temp$value[which(dt_temp$variable=="ENV_Depth")] <- -log10(dt_temp$value[which(dt_temp$variable=="ENV_Depth")])
+CLU$Freq <- 1
+dt_temp <- merge(dt_temp, CLU[,c("cluster","Freq")], by="cluster", all.x=TRUE, all.y=FALSE)
+dt_temp$variable <- gsub("Depth","-log10(Depth)",(gsub("ENV_","",gsub("_cruise_and_WOA13","", gsub("_cruise_and_PO4_WOA13","", gsub("cruise_and_SiO4_WOA13","",dt_temp$variable))))))
+ENVids <- gsub("Depth","-log10(Depth)",(gsub("ENV_","",gsub("_cruise_and_WOA13","", gsub("_cruise_and_PO4_WOA13","", gsub("cruise_and_SiO4_WOA13","",ENVids))))))
+dt_temp$cluster <- as.character(dt_temp$cluster)
+
+# Sort clusters based on median(-log10(Depth))
+medianDepth <- data.frame(cluster=as.character(1:36),
+                          medianDepth=rep(0,36),
+                          medianTemp=rep(0,36))
+for(i in c(1:36))
+{
+  medianDepth$medianDepth[i] <- median(dt_temp$value[which(dt_temp$variable=="-log10(Depth)" & dt_temp$cluster==as.character(i))])
+  medianDepth$medianTemp[i] <- median(dt_temp$value[which(dt_temp$variable=="Temperature" & dt_temp$cluster==as.character(i))])
+}
+cluster_order <- c(as.character(medianDepth[order(medianDepth$medianDepth, medianDepth$medianTemp, decreasing = TRUE),"cluster"]),"unassigned")
+dt_temp$cluster[which(dt_temp$cluster=="0")] <- "unassigned"
+
+# Visualize
+p <- ggplot(dt_temp, aes(x=factor(cluster, levels=cluster_order), y=value)) +
+     geom_boxplot(width=0.5, outlier.size=0.5) +
+     ylab("global metric") + xlab("network cluster") +
+     theme(text = element_text(size = 10), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.major.y = element_blank()) +
+     facet_grid(factor(variable,levels=ENVids)~., scales = "free_y")
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+filename <- "Cluster_ENV.pdf"
+ggsave(paste(path,filename,sep=""), width = 15, height = 8, plot = p)
+```
+
+# Global Metrics
+```{r}
+path <- paste(PATH,"03_GlobalNetworkMetrics/",sep="")
+filename <- "NW_properties_overview_sampleSpecificNW.tsv"
+NWprop <- read.table(paste(path,filename,sep=""), header = TRUE)
+dt <- merge(dt, NWprop, by.x="Sample", by.y="Sample", all.x=TRUE, all.y=FALSE)
+colnames(dt)
+NWpropids <- c("num_nodes","num_edges","edge_density","ave_path_length","transitivity_global_clusering_coef","assortativity_degree","assortativity_nominal_EukProk","average_pos_association_strength")
+dt_temp <- melt(dt[,c("cluster",NWpropids)])
+dt_temp <- dt_temp[which(!is.na(dt_temp$value)),]
+dt_temp <- merge(dt_temp, CLU[,c("cluster","Freq")], by="cluster", all.x=TRUE, all.y=FALSE)
+dt_temp$variable <- gsub("_","",gsub("_global_clusering_coef"," ",gsub("_nominal_","", gsub("average_pos_association_strength","avg pos ass", gsub("ave_path_length","avg path",dt_temp$variable)))))
+NWpropids <- gsub("_","",gsub("_global_clusering_coef"," ",gsub("_nominal_","", gsub("average_pos_association_strength","avg pos ass", gsub("ave_path_length","avg path",NWpropids)))))
+dt_temp <- dt_temp[-which(dt_temp$variable=="edgedensity" & dt_temp$value>0.05),]
+dt_temp$cluster[which(dt_temp$cluster=="0")] <- "unassigned"
+p <- ggplot(dt_temp, aes(x=factor(cluster, levels=cluster_order), y=value)) +
+     geom_boxplot(width=0.5, outlier.size=0.5) +
+     ylab("global metric") + xlab("network cluster") +
+     theme(text = element_text(size = 10), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.major.y = element_blank()) +
+     facet_grid(factor(variable,levels=NWpropids)~., scales = "free_y")
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+filename <- "Cluster_GlobalMetrics_EdgeDensityZoom.pdf"
+ggsave(paste(path,filename,sep=""), width = 15, height = 9, plot = p)
+```
+
+# Taxonomic classification
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "SampleSpecificSubnetworks.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE)
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Euk_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_PhylumDivision <- NA
+NW$Target_PhylumDivision <- NA
+NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="E")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="E")]),"Division_pr2"]
+NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="E")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="E")]),"Division_pr2"]
+unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+
+filename <- "Prok_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="P")]),"Phylum_SILVA"]
+NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="P")]),"Phylum_SILVA"]
+unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+
+# Proteobacteria
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Proteobacteria")] <- TAX[as.character(NW$Source[which(NW$Source_PhylumDivision=="Proteobacteria")]),"Class_SILVA"]
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Proteobacteria")] <- TAX[as.character(NW$Target[which(NW$Target_PhylumDivision=="Proteobacteria")]),"Class_SILVA"]
+
+# Kingdom
+filename <- "Euk_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_Kingdom <- NA
+NW$Target_Kingdom <- NA
+NW$Source_Kingdom[which(substr(NW$Source,1,1)=="E")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="E")]),"Kingdom_pr2"]
+NW$Target_Kingdom[which(substr(NW$Target,1,1)=="E")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="E")]),"Kingdom_pr2"]
+
+filename <- "Prok_taxdata.txt"
+TAX <- read.table(paste(path,filename,sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(TAX) <- TAX$ID
+colnames(TAX)
+NW$Source_Kingdom[which(substr(NW$Source,1,1)=="P")] <- TAX[as.character(NW$Source[which(substr(NW$Source,1,1)=="P")]),"Kingdom_SILVA"]
+NW$Target_Kingdom[which(substr(NW$Target,1,1)=="P")] <- TAX[as.character(NW$Target[which(substr(NW$Target,1,1)=="P")]),"Kingdom_SILVA"]
+unique(c(as.character(NW$Source_Kingdom), as.character(NW$Target_Kingdom)))
+
+# Nitrospinae and Nitrospirae
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Nitrospinae")] <- "NiN"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Nitrospinae")] <- "NiN"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Nitrospirae")] <- "NiR"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Nitrospirae")] <- "NiR"
+
+# Marinimicrobia_(SAR406_clade)
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Marinimicrobia_(SAR406_clade)")] <- "SAR406"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Marinimicrobia_(SAR406_clade)")] <- "SAR406"
+
+# Chlamydiae and Chloroflexi
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Chlamydiae")] <- "ChA"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Chlamydiae")] <- "ChA"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Chloroflexi")] <- "ChO"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Chloroflexi")] <- "ChO"
+
+# unclassified Bacteria
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="WPS-2")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="WPS-2")] <- "unBac"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="PAUC34f")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="PAUC34f")] <- "unBac"
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="AncK6")] <- "unBac"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="AncK6")] <- "unBac"
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision))&NW$Source_Kingdom=="Bacteria")] <- "unBac"
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision))&NW$Target_Kingdom=="Bacteria")] <- "unBac"
+
+# unclassified Eukaryota
+NW$Source_PhylumDivision[which(NW$Source_PhylumDivision=="Eukaryota_XX")] <- "unEuk"
+NW$Target_PhylumDivision[which(NW$Target_PhylumDivision=="Eukaryota_XX")] <- "unEuk"
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Eukaryota")] <- "unEuk"
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Eukaryota")] <- "unEuk"
+
+# unclassified Arch?
+NW$Source_PhylumDivision[which((is.na(NW$Source_PhylumDivision))&NW$Source_Kingdom=="Archaea")]
+NW$Target_PhylumDivision[which((is.na(NW$Target_PhylumDivision))&NW$Target_Kingdom=="Archaea")]
+
+# any NA left?
+NW[which(is.na(NW$Source_Kingdom)),"Source_Kingdom"] <- substr(NW[which(is.na(NW$Source_Kingdom)),"Source"],1,3)
+NW[which(is.na(NW$Target_Kingdom)),"Target_Kingdom"] <- substr(NW[which(is.na(NW$Target_Kingdom)),"Target"],1,3)
+NW[which(NW$Source_Kingdom=="Euk"),"Source_Kingdom"] <- "Eukaryota"
+NW[which(NW$Target_Kingdom=="Euk"),"Target_Kingdom"] <- "Eukaryota"
+NW[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Eukaryota"),"Source_PhylumDivision"] <- "unEuk"
+NW[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Eukaryota"),"Target_PhylumDivision"] <- "unEuk"
+NW[which(NW$Source_Kingdom=="Pro"),"Source_Kingdom"] <- "Prokaryota"
+NW[which(NW$Target_Kingdom=="Pro"),"Target_Kingdom"] <- "Prokaryota"
+NW[which((is.na(NW$Source_PhylumDivision)) & NW$Source_Kingdom=="Prokaryota"),"Source_PhylumDivision"] <- "unProk"
+NW[which((is.na(NW$Target_PhylumDivision)) & NW$Target_Kingdom=="Prokaryota"),"Target_PhylumDivision"] <- "unProk"
+NW[which(is.na(NW$Source_PhylumDivision)),]
+NW[which(is.na(NW$Source_PhylumDivision)),]
+
+# PhylumDivision_IDs
+PhylumDivision_IDs <- unique(c(as.character(NW$Source_PhylumDivision), as.character(NW$Target_PhylumDivision)))
+PhylumDivision_IDs <- c(sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P" & NW$Source_Kingdom=="Archaea")],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P" & NW$Target_Kingdom=="Archaea")]))),
+                             sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="P" & (NW$Source_Kingdom=="Bacteria" & NW$Source_PhylumDivision!="unBac"))],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="P" & (NW$Target_Kingdom=="Bacteria" & NW$Target_PhylumDivision!="unBac"))]))),
+                             sort(unique(c(NW$Source_PhylumDivision[which(substr(NW$Source,1,1)=="E" & NW$Source_PhylumDivision!="unEuk")],
+                                           NW$Target_PhylumDivision[which(substr(NW$Target,1,1)=="E" & NW$Target_PhylumDivision!="unEuk")]))),
+                             "unBac", "unEuk", "unProk")
+PhylumDivision_IDs
+
+# color
+filename <- "Nodes_Taxa.tsv"
+NodeTaxa <- read.table(paste(path,filename,sep=""), header = TRUE)
+my_grid_col <- unique(NodeTaxa[,c("PhylumDivision","color")])
+rownames(my_grid_col) <- my_grid_col$PhylumDivision
+my_grid_col$PhylumDivision <- NULL
+my_grid_col <- as.data.frame(t(my_grid_col), stringsAsFactors = FALSE)
+my_grid_col
+```
+
+```{r}
+PhylumDivision_IDs
+```
+ [1] "Crenarchaeota"       "Euryarchaeota"       "Nanoarchaeaeota"     "Thaumarchaeota"      "Acidobacteria"       "Actinobacteria"      "Alphaproteobacteria" "Bacteroidetes"       "Calditrichaeota"     "ChA"                 "ChO"                
+[12] "Cyanobacteria"       "Dadabacteria"        "Deinococcus-Thermus" "Deltaproteobacteria" "Firmicutes"          "Gammaproteobacteria" "Gemmatimonadetes"    "Hydrogenedentes"     "Kiritimatiellaeota"  "Lentisphaerae"       "Margulisbacteria"   
+[23] "NiN"                 "NiR"                 "Planctomycetes"      "SAR406"              "Schekmanbacteria"    "Spirochaetes"        "Verrucomicrobia"     "Apicomplexa"         "Apusomonadidae"      "Centroheliozoa"      "Cercozoa"           
+[34] "Chlorophyta"         "Choanoflagellida"    "Ciliophora"          "Cryptophyta"         "Dinoflagellata"      "Fungi"               "Hilomonadea"         "Katablepharidophyta" "Mesomycetozoa"       "Ochrophyta"          "Picozoa"            
+[45] "Radiolaria"          "Stramenopiles_X"     "Telonemia"           "unBac"               "unEuk"               "unProk"     
+
+Circular Plot for each cluster
+-> Edge prevalence >70%
+```{r}
+myorderSections <- PhylumDivision_IDs
+mygridcolIDs <- PhylumDivision_IDs
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+
+for(i in unique(dt$cluster))
+{
+  sampleIDs <- as.character(dt[which(dt$cluster==i),"Sample"])
+  dt_temp <- NW[,c("Source_PhylumDivision", "Target_PhylumDivision",sampleIDs)]
+  if(length(sampleIDs)>1)
+  {
+    dt_temp$EdgePrevalence <- rowSums(dt_temp[,-c(1,2)])/length(sampleIDs)
+  }else{
+    dt_temp$EdgePrevalence <- dt_temp[,-c(1,2)]
+  }
+  print(paste("Cluster ",i, " with ", length(sampleIDs), " samples", sep=""))
+  # Circular Plot
+  ## Initialize the layout
+  #circos.initialize(factor=unique(N$Phylum), xlim=c(0,length(unique(N$Phylum))))
+  # Edge Prevalence above 0%
+  myE <- dt_temp[which(dt_temp$EdgePrevalence>0),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence")]
+    
+  myE$Source_PhylumDivision[which(is.na(myE$Source_PhylumDivision))] <- "noTax"
+  myE$Target_PhylumDivision[which(is.na(myE$Target_PhylumDivision))] <- "noTax"
+  
+  filename <- paste("Taxa_PrevalenceAbove0_Cluster_",i,".png",sep="")
+  png(file=paste(path,filename,sep=""))
+  circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+
+  # now, the image with rotated labels
+  chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+  circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+      xlim = get.cell.meta.data("xlim")
+      ylim = get.cell.meta.data("ylim")
+      sector.name = get.cell.meta.data("sector.index")
+      circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 1)
+      #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+  }, bg.border = NA)
+  
+  dev.off()
+  # clear
+  circos.clear()
+  
+  print(paste(">0% -> ", dim(myE)[1], " edges", sep=""))
+  
+  if(length(which(dt_temp$EdgePrevalence>0.7))>0)
+  {
+      # Edge Prevalence above 80%
+      myE <- dt_temp[which(dt_temp$EdgePrevalence>0.7),c("Source_PhylumDivision", "Target_PhylumDivision","EdgePrevalence")]
+        
+      myE$Source_PhylumDivision[which(is.na(myE$Source_PhylumDivision))] <- "noTax"
+      myE$Target_PhylumDivision[which(is.na(myE$Target_PhylumDivision))] <- "noTax"
+      
+      filename <- paste("Taxa_PrevalenceAbove70_Cluster_",i,".png",sep="")
+      png(file=paste(path,filename,sep=""))
+      circos.par(gap.after = 5,   start.degree = 90, clock.wise = TRUE)
+    
+      # now, the image with rotated labels
+      chordDiagram(myE, order = myorderSections, annotationTrack = "grid", preAllocateTracks = 2, col=my_grid_col["color",as.character(myE$Source_PhylumDivision)], grid.col = my_grid_col["color",mygridcolIDs])
+      circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+          xlim = get.cell.meta.data("xlim")
+          ylim = get.cell.meta.data("ylim")
+          sector.name = get.cell.meta.data("sector.index")
+          circos.text(mean(xlim), ylim[1] + .01, substr(sector.name,1,3), facing = "clockwise", niceFacing = TRUE, adj = c(-0.1, 0.5), cex = 1)
+          #circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+      }, bg.border = NA)
+      
+      dev.off()
+      # clear
+      circos.clear()
+      
+      print(paste(">70% -> ", dim(myE)[1], " edges", sep=""))
+  }else{
+    print(paste(">70% -> ", 0, " edges", sep=""))
+  }
+}
+```
+
+# Showing stations on the map
+- https://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html
+- https://www.datanovia.com/en/blog/how-to-create-a-map-using-ggplot2/
+```{r}
+theme_set(theme_void())
+
+path <- paste(PATH,"00_Tables/",sep="")
+filename <- "Sample_Classification.tsv"
+SAM <- read.table(paste(path,filename,sep=""), header = TRUE)
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+filename <- "HDBSCAN_minSamples3_minClusterSize5.tsv"
+CLU <- read.csv(paste(path,filename,sep=""), header = TRUE, sep="\t")
+dt <- merge(SAM, CLU[,c("Sample","cluster")], by="Sample")
+colnames(dt)
+dt$cluster <- as.character((dt$cluster+1))
+world_map <- map_data("world")
+
+for(i in unique(dt$cluster))
+{
+  dt_temp <- dt[which(dt$cluster==i),]
+  size <- length(which(dt$cluster==i))
+  p <- ggplot(world_map, aes(x = long, y = lat, group = group)) +
+    geom_polygon(fill="lightgray") + 
+    coord_fixed(1.3) + ggtitle(paste(i,size,sep=", "))
+    
+  if(length(which(dt_temp$layer=="BAT"))>0){p <- p + geom_point(data = dt_temp[which(dt_temp$layer=="BAT"),], aes(x = Longitude, y = Latitude, group="cluster"), shape=15, color = "black", alpha = 0.6, size = 2)}
+  if(length(which(dt_temp$layer=="MES"))>0){p <- p + geom_point(data = dt_temp[which(dt_temp$layer=="MES"),], aes(x = Longitude, y = Latitude, group="cluster"), shape=18, color = "royal blue",  alpha = 0.7, size = 2)}
+  if(length(which(dt_temp$layer=="DCM"))>0){p <- p + geom_point(data = dt_temp[which(dt_temp$layer=="DCM"),], aes(x = Longitude, y = Latitude, group="cluster"), shape=19, color = "dark green", alpha = 0.7, size = 2)}
+  if(length(which(dt_temp$layer=="EPI"))>0){p <- p + geom_point(data = dt_temp[which(dt_temp$layer=="EPI"),], aes(x = Longitude, y = Latitude, group="cluster"), shape=15, color = "brown", alpha = 0.5, size = 2)}
+  if(length(which(dt_temp$layer=="SRF"))>0){p <- p + geom_point(data = dt_temp[which(dt_temp$layer=="SRF"),], aes(x = Longitude, y = Latitude, group="cluster"), shape=8, color = "orange", alpha = 0.5, size = 2)}
+  
+  filename <- paste(paste("Map_Cluster_",i,".png",sep=""))
+  ggsave(paste(path,filename,sep=""), width = 2, height = 2, plot = p)
+}
+```
+
+# Prevalence per cluster
+```{r}
+path <- paste(PATH,"02_NetworkConstruction/",sep="")
+filename <- "sampleSpecificNW.tsv"
+NW <- read.table(paste(path,filename,sep=""), header = TRUE)
+path <- paste(PATH,"08_NetworkCluster/",sep="")
+for(i in levels(dt$cluster))
+{
+  size <- length(which(dt$cluster==i))
+  if(size>1){
+    my_p <- rowSums(NW[,as.character(dt[which(dt$cluster==i),"Sample"])])/size
+  }else{
+    my_p <- NW[,as.character(dt[which(dt$cluster==i),"Sample"])]
+  }
+  dt_temp <- data.frame(prevalence=my_p)
+  p <- ggplot(dt_temp, aes(x = prevalence)) +
+    geom_histogram(fill="lightgray",binwidth = 0.05) + ggtitle(i) + theme_classic() + theme(text = element_text(size = 12)) + ylab("") + xlab("") + ggtitle(paste(i,size,sep=", "))
+  
+  filename <- paste("Prevalence_Cluster_",i,".png",sep="")
+  ggsave(paste(path,filename,sep=""), width = 2, height = 2, plot = p)
+}
+```
+

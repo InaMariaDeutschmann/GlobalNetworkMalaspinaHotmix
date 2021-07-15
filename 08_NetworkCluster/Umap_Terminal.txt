@@ -1,0 +1,16 @@
+Commands in the Terminal:
+
+# Version of python
+python --version
+> Python 3.7.6
+
+# Installing map package: https://hbctraining.github.io/scRNA-seq/lessons/umap-installation.html
+
+conda config --add channels conda-forge
+
+conda install -c conda-forge umap-learn
+
+conda list
+
+# Run script
+Python Umap.py
