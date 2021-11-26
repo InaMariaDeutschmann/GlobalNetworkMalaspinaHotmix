@@ -1,3 +1,7 @@
+![GitHub all releases](https://img.shields.io/github/downloads/InaMariaDeutschmann/GlobalNetworkMalaspinaHotmix/total?logo=Github&style=flat-square)
+![Twitter URL](https://img.shields.io/twitter/url?logo=Twitter&style=flat-square&url=https%3A%2F%2Fgithub.com%2FInaMariaDeutschmann%2FGlobalNetworkMalaspinaHotmix)
+![Twitter Follow](https://img.shields.io/twitter/follow/ina_deutschmann?logo=Twitter&style=flat-square)
+
 # Data and code for: Disentangling marine microbial networks across space
 
 Preprint: https://doi.org/10.1101/2021.07.12.451729
