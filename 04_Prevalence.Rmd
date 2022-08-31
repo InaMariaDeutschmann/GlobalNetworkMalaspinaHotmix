@@ -488,6 +488,66 @@ for(PERCENTAGE in c(0.7))
 [1] "IO MES 363"
 [1] "IO BAT 123"
 
+Highly prevalent edges: frequency and percentage per region and depth 
+```{r}
+myFreqTable <- data.frame(Source_PhylumDivision = character(),
+                          Target_PhylumDivision = character(),
+                          Frequency = integer(),
+                          Percentage = double(),
+                          Region = character(),
+                          DepthLayer = character())
+for(PERCENTAGE in c(0.7))
+{
+  print(paste("Percentage >", PERCENTAGE, "%"))
+  dt_temp <-  merge(NW, PREV, by=c("Source","Target"))
+  for(i in c("MS","NAO","SAO","SPO","NPO","IO"))
+  {
+    for(j in c("SRF","DCM","MES","BAT"))
+    {
+      myE <- dt_temp[which(dt_temp[,paste("Prevalence",i,j,sep="_")]>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+      myrownum <- which(myE$Source_PhylumDivision>myE$Target_PhylumDivision)
+      v <- myE$Target_PhylumDivision
+      myE$Target_PhylumDivision[myrownum] <- myE$Source_PhylumDivision[myrownum]
+      myE$Source_PhylumDivision[myrownum] <- v[myrownum]
+      print(paste(i,j,dim(myE)[1]))
+      myFreq <- as.data.frame(table(myE[,1:2]))
+      myFreq <- myFreq[which(myFreq$Freq>0),]
+      colnames(myFreq)[3] <- "Frequency"
+      myFreq$Percentage <- myFreq$Frequency / dim(myE)[1] * 100
+      myFreq$Region <- i
+      myFreq$DepthLayer <- j
+      myFreq <- myFreq[order(myFreq$Source_PhylumDivision, myFreq$Target_PhylumDivision),]
+      myFreqTable <- rbind(myFreqTable, myFreq)
+    }
+  }
+
+  for(i in c("MS","NAO"))
+  {
+    for(j in c("EPI"))
+    {
+      myE <- dt_temp[which(dt_temp[,paste("Prevalence",i,j,sep="_")]>PERCENTAGE),c("Source_PhylumDivision", "Target_PhylumDivision",paste("Prevalence",i,j,sep="_"))]
+      myrownum <- which(myE$Source_PhylumDivision>myE$Target_PhylumDivision)
+      v <- myE$Target_PhylumDivision
+      myE$Target_PhylumDivision[myrownum] <- myE$Source_PhylumDivision[myrownum]
+      myE$Source_PhylumDivision[myrownum] <- v[myrownum]
+      print(paste(i,j,dim(myE)[1]))
+      myFreq <- as.data.frame(table(myE[,1:2]))
+      myFreq <- myFreq[which(myFreq$Freq>0),]
+      colnames(myFreq)[3] <- "Frequency"
+      myFreq$Percentage <- myFreq$Frequency / dim(myE)[1] * 100
+      myFreq$Region <- i
+      myFreq$DepthLayer <- j
+      myFreq <- myFreq[order(myFreq$Source_PhylumDivision, myFreq$Target_PhylumDivision),]
+      myFreqTable <- rbind(myFreqTable, myFreq)
+    }
+  }
+}
+# Save table
+path <- paste(PATH,"04_Prevalence/",sep="")
+filename <- "HighlyPrevalentEdges_FrequencyPercentagePerRegionDepth.tsv"
+write.table(myFreqTable, paste(path,filename,sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
 Check NAO: Malaspina vs Hotmix
 ```{r}
 for(i in c("NAO"))
