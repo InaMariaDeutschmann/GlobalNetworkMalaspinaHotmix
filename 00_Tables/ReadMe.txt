@@ -1,4 +1,4 @@
-The following files will be available after acceptance:
-- microbial sequence abundance file
-- taxonomic classification
-- environmental data
+The folder contains:
+- microbial sequence abundance data (ASV)
+- taxonomic classification (Euk_taxdata and Prok_taxdata)
+- environmental data (ENV)
