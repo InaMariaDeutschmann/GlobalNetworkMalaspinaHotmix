@@ -405,6 +405,10 @@ for(REGION in REGIONids){
   dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="DCM")] <- "DCM"
   dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="absent" & dt_aggregate$MES=="MES")] <- "MES"
   dt_aggregate$layerID[which(dt_aggregate$SRF=="absent" & dt_aggregate$DCM=="absent" & dt_aggregate$MES=="absent" & dt_aggregate$BAT=="BAT")] <- "BAT"
+
+  filename <- paste(path,"Alluvial_ASV_", REGION,"_dt_aggregate.txt",sep="")
+  write.table(dt_aggregate, file = filename, sep = "\t", quote = FALSE, col.names = TRUE, row.names = FALSE) 
+
   mycolor_id <- c(SRF="yellow",
                 DCM="orange",
                 MES="red",
