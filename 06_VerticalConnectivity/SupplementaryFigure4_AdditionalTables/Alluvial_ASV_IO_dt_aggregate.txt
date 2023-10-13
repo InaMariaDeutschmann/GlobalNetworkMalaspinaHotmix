@@ -1,0 +1,16 @@
+SRF	DCM	MES	BAT	Freq	layerID
+absent	absent	absent	BAT	423	BAT
+absent	DCM	DCM	DCM	67	DCM
+absent	DCM	absent	DCM	10	DCM
+absent	absent	MES	MES	566	MES
+SRF	SRF	SRF	SRF	144	SRF
+SRF	absent	SRF	SRF	64	SRF
+SRF	SRF	absent	SRF	53	SRF
+SRF	absent	absent	SRF	63	SRF
+absent	DCM	DCM	absent	110	DCM
+absent	absent	MES	absent	632	MES
+SRF	SRF	SRF	absent	64	SRF
+SRF	absent	SRF	absent	30	SRF
+absent	DCM	absent	absent	212	DCM
+SRF	SRF	absent	absent	415	SRF
+SRF	absent	absent	absent	2005	SRF
