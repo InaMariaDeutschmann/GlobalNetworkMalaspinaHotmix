@@ -1,4 +1,5 @@
 [![DOI](https://zenodo.org/badge/383840721.svg)](https://zenodo.org/doi/10.5281/zenodo.10229951)
+![GitHub all releases](https://img.shields.io/github/downloads/InaMariaDeutschmann/GlobalNetworkMalaspinaHotmix/total?logo=Github&style=flat-square)
 
 # Data and code for: Disentangling marine microbial networks across space
 
