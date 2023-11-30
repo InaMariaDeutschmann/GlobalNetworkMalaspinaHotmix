@@ -13,9 +13,6 @@ This repository contains the data needed to redo the analysis:
 - commands to run FlashWeave for network construction
 - commands to run EnDED for environmentally-driven-edge-detection and computing Jaccard index (EnDED available here: https://github.com/InaMariaDeutschmann/EnDED)
 
-Note on data availability: The microbial sequence abundances (ASV tables), taxonomic classifications, environmental data including nutrients will be publicly available after acceptance. The data are of course available to editors and reviewers upon request.
-
-
 ## Citation
 Disentangling marine microbial networks across space; Ina Maria Deutschmann, Erwan Delage, Caterina R. Giner, Marta Sebastián, Julie Poulain, Javier Arístegui, Carlos M. Duarte, Silvia G. Acinas, Ramon Massana, Josep M. Gasol, Damien Eveillard, Samuel Chaffron, Ramiro Logares; bioRxiv 2021.07.12.451729; doi: https://doi.org/10.1101/2021.07.12.451729
 
